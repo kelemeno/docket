@@ -44,7 +44,7 @@
       </main>
       <aside><div data-part="side"></div><p class="meta" data-part="foot"></p></aside>`;
     const part = (n) => el.querySelector(`[data-part="${n}"]`);
-    let data = null, sel = null, lastUndo = null;
+    let data = null, sel = null, lastUndo = null, offline = false;
 
     const stamp = (d) => d.toLocaleString("sv").slice(0, 16).replace(" ", "T");  // local YYYY-MM-DDTHH:MM
     const due = (t) => (t.do || data.today) <= data.today && !(t.until && t.until > stamp(new Date()));
@@ -79,17 +79,26 @@
       if (t.asked) list.push(`<div class="note claude waiting"><span class="by">${esc(ai)}</span> is looking into it…</div>`);
       return list.length ? `<div class="notes">${list.join("")}</div>` : "";
     }
+    // A part is rebuilt only when what it shows changed: the page reloads its data every few seconds
+    // while a refresh runs, and rebuilding the Now card each time ate clicks on Send (the button was
+    // replaced between mouse-down and mouse-up), closed the snooze menu and moved the caret.
+    const shown = new WeakMap();
+    function put(node, html) {
+      if (shown.get(node) === html) return false;
+      node.innerHTML = html; shown.set(node, html);
+      return true;
+    }
     function renderNow(g) {
       const t = data.tasks.find((x) => x.id === sel && (x.status === "open" || x.status === "waiting")) || g.open[0];
       // a reload mustn't eat a reply you're typing
       const box = part("now").querySelector(".reply input"), draft = box && box.dataset.id === (t && t.id) ? box.value : "",
             typing = box && document.activeElement === box;
-      if (!t) { sel = null; part("now").innerHTML = `<h2>Now</h2>${src.empty(data)}`; return; }
+      if (!t) { sel = null; put(part("now"), `<h2>Now</h2>${src.empty(data)}`); return; }
       sel = t.id;
       const btn = (a) => a === "open" && !(t.sources || []).some((s) => s.link) ? ""
         : `<button data-a="${a}"${a === "done" ? ' class="primary"' : ""}>${a === "star" && t.star ? "Unstar" : NAMES[a]}<kbd>${KEYS[a]}</kbd></button>`;
       const ses = (t.sessions || []).map((s) => `<span class="chip">⌁ ${esc(s)}</span>`).join("");
-      part("now").innerHTML = `<h2>Now</h2>
+      if (!put(part("now"), `<h2>Now</h2>
         <p class="title">${esc(t.title)}</p>
         ${t.next ? `<p class="next">→ ${esc(t.next)}</p>` : ""}${t.why ? `<p class="why">${esc(t.why)}</p>` : ""}
         ${chips(t)}
@@ -101,7 +110,7 @@
           <div class="snooze hidden" data-part="snooze">
             ${src.minutes ? `<button data-snooze="m30">30 min</button><button data-snooze="m60">1 hour</button>` : ""}<button data-snooze="1">Tomorrow</button><button data-snooze="mon">Monday</button><button data-snooze="7">Next week</button>
             <input type="date" min="${esc(data.today)}" aria-label="Snooze until">
-          </div></div>`;
+          </div></div>`)) return;  // unchanged: the box, what's typed in it and the caret stay as they are
       const input = part("now").querySelector(".reply input");
       if (input && draft) input.value = draft;
       if (input && typing) input.focus();
@@ -127,11 +136,11 @@
       renderNow(g);
       const fill = (k, list, opts) => {
         const box = el.querySelector(`[data-list="${k}"]`); if (!box) return;
-        box.innerHTML = rows(list, opts); el.querySelector(`[data-n="${k}"]`).textContent = list.length || "";
+        put(box, rows(list, opts)); el.querySelector(`[data-n="${k}"]`).textContent = list.length || "";
       };
       fill("quick", g.quick, { empty: "No quick items today." }); fill("deep", g.deep, { empty: "No deep work for today." });
       fill("waiting", g.waiting); fill("later", g.later, { later: true }); fill("handled", g.handled, { closed: true, empty: "Nothing yet." });
-      part("side").innerHTML = src.side(data);
+      put(part("side"), src.side(data));
       part("foot").textContent = src.foot ? src.foot(data) : "";
       if (src.rendered) src.rendered(data);
     }
@@ -220,7 +229,12 @@
       document.body.appendChild(t); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.remove(), 5000);
     }
     async function reload() {
-      try { data = await src.load(); } catch (e) { part("now").innerHTML = `<h2>Now</h2><p class="err">${esc(e.message || e)}</p>`; return; }
+      try { data = await src.load(); offline = false; } catch (e) {
+        // the server restarting (an update) mustn't wipe the page: keep what's shown, and say so once
+        if (!data) put(part("now"), `<h2>Now</h2><p class="err">${esc(e.message || e)}</p>`);
+        else if (!offline) { offline = true; toast("Can't reach the page's server just now. It catches up by itself."); }
+        return;
+      }
       render();
     }
     return { reload, render, get data() { return data; } };

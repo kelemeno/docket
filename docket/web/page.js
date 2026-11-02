@@ -9,8 +9,13 @@
 // Needs esc.js and docket.js loaded first, and the server's /state, /task, /reply and /refresh.
 window.docketPage = function (el, opts = {}) {
   async function post(path, body) {
-    const res = await fetch(path, { method: "POST", headers: { "X-Docket": "1", "Content-Type": "application/json" },
-                                    body: JSON.stringify(body || {}) });
+    let res;
+    try {
+      res = await fetch(path, { method: "POST", headers: { "X-Docket": "1", "Content-Type": "application/json" },
+                                body: JSON.stringify(body || {}) });
+    } catch {  // the server is restarting (an update) or stopped
+      throw new Error("Can't reach the page's server just now. Try again in a moment.");
+    }
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || "That didn't work.");
     return out;
