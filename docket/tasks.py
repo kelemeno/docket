@@ -1,4 +1,4 @@
-"""The task list: one list that carries over from day to day, kept current by the hourly refresh
+"""The task list: one list that carries over from day to day, kept current by the refresh
 (app.py has Claude read what's new and hands it here) and by what you do on the page.
 
 The rules: your changes always win (a field you set is listed in "mine" and the refresh leaves it
@@ -212,7 +212,7 @@ def act(task_id, action, value, today, now):
 
 def note(task_id, text, now):
     """Something you tell Claude about a task ("ask Sam for a review in the team thread"). It waits
-    for Claude's answer (app.Page.reply), and the hourly refresh reads it too."""
+    for Claude's answer (app.Page.reply), and the refresh reads it too."""
     text = re.sub(r"[ \t]+", " ", str(text or "")).strip()[:600]
     if not text:
         raise ValueError("the note is empty")

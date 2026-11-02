@@ -1,17 +1,26 @@
-"""Your agent's work on the list: aag (auto-agents) writes and reviews PRs for you from Slack, and every
-minute Docket reads what it has (`aag status --json`, on this computer or over SSH where aag runs on a
-server). A task whose next move is yours is open in the list, linked to its DM thread and its PR; one
-the agent works on, or that waits on others, is waiting; a finished one is handled, and so is a review
-once the agents agree (approving and merging it is the author's and the humans' to do). The side panel's
-"Your agent" card has the rest: what each agent is doing now, and where each PR stands.
+"""Your agent's work on the list: aag (auto-agents) writes and reviews PRs for you from Slack. Docket
+has it from two places, and they make one list:
 
-aag keeps these tasks: the hourly refresh leaves them alone and skips what they cover (your DMs with
-the bot, the PRs aag tracks), and a task leaves the list when aag stops listing it. Your snooze,
-priority and kind on one stay yours; a done or drop stays until its next move changes.
+- Slack, always: your agent DMs you in one thread per task, and the refresh reads those threads like
+  any other DM, so their asks become tasks wherever aag runs.
+- aag's own feed, when it can be read: `aag status --json` every minute, on this computer (found by
+  itself) or over SSH where aag runs on a server. A task whose next move is yours is open, linked to
+  its DM thread and its PR; one the agent works on, or that waits on others, is waiting; a finished one
+  is handled, and so is a review once the agents agree (approving and merging it is the author's and
+  the humans' to do). The side panel's "Your agent" card has the rest: what each agent is doing now,
+  and where each PR stands.
 
-    settings.json   "aag": "local"       runs `aag status --json` here
-                    "aag": "ssh HOST"    runs it on HOST (BatchMode, so it never asks for a password)
+The two meet in the DM thread: one task per thread. While the feed can be read it has the say on a
+task's state (status, title, next step, who's waiting), the refresh adds what the thread says (why) and
+its links, and a task leaves the list when aag stops listing it. While it can't, the refresh keeps
+them from the threads. Your snooze, priority and kind on one stay yours; a done or drop stays until its
+next move changes.
+
+    settings.json   "aag" unset          the aag on this computer, if there is one
+                    "aag": "local"       the same, and say so when there's none
+                    "aag": "ssh HOST"    the one on HOST (BatchMode, so it never asks for a password)
                     "aag": "ssh HOST CMD"  runs CMD status --json there, when aag isn't on SSH's PATH
+                    "aag": "off"         no feed, and the refresh reads the agent's DMs as any others
 """
 import datetime as dt
 import json
@@ -26,6 +35,7 @@ from . import app, store, tasks
 EVERY = 60
 TIMEOUT = 30
 STATUS = ("status", "done_at", "closed_by", "evidence")  # what your done or drop sets
+THREAD = re.compile(r"/archives/([A-Z0-9]+)/p(\d{10})(\d{6})")
 _feed = {"feed": None, "at": None, "error": None, "since": None}
 _lock = threading.Lock()
 _known = set()  # the list's task ids at the last read: what a refresh adds is the rest
@@ -33,25 +43,27 @@ _rules = ""  # app.RULES before this module added its own
 
 
 def command(setting):
-    """The command that reads aag, from the "aag" setting; None when it's not set."""
+    """The command that reads aag, from the "aag" setting; None for "off", and when it's unset and
+    there's no aag here."""
     words = str(setting or "").split()
-    if words == ["local"]:
+    if words in ([], ["local"]):
         aag = app._which("aag")
-        if not aag:
+        if aag:
+            return [aag, "status", "--json"]
+        if words:
             raise RuntimeError("no `aag` command here (looked on PATH and in ~/.local/bin)")
-        return [aag, "status", "--json"]
+        return None
     if len(words) >= 2 and words[0] == "ssh":
         return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "--", words[1], *(words[2:] or ["aag"]),
                 "status", "--json"]
-    if words:
-        raise RuntimeError(f'"aag" is "local" or "ssh HOST", not {setting!r}')
-    return None
+    if words == ["off"]:
+        return None
+    raise RuntimeError(f'"aag" is "local", "ssh HOST" or "off", not {setting!r}')
 
 
-def read(setting):
+def read(cmd):
     """aag's feed (its shape: StatusJson in aag's src/views.ts). Raises when it can't be had."""
-    r = subprocess.run(command(setting), env=app._env(), stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                       timeout=TIMEOUT)
+    r = subprocess.run(cmd, env=app._env(), stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=TIMEOUT)
     if r.returncode != 0:
         raise RuntimeError((r.stderr or r.stdout).strip()[-200:] or f"exit {r.returncode}")
     try:
@@ -61,6 +73,28 @@ def read(setting):
     if not isinstance(feed, dict) or feed.get("v") != 1 or not isinstance(feed.get("tasks"), list):
         raise RuntimeError("that's not aag's feed: an aag from before `aag status --json`? (`aag update`)")
     return feed
+
+
+def live():
+    """The feed was read at the last try."""
+    with _lock:
+        return bool(_feed["feed"]) and not _feed["error"]
+
+
+def thread(link):
+    """The Slack thread a link is in, as (channel, the thread's ts), whatever the workspace's host name
+    (one workspace has several); None for any other link."""
+    m = THREAD.search(str(link or ""))
+    if not m:
+        return None
+    root = re.search(r"[?&]thread_ts=(\d+\.\d+)", link)
+    return m.group(1), root.group(1) if root else f"{m.group(2)}.{m.group(3)}"
+
+
+def _same(link):
+    """What a link points at, whatever the host: a Slack message, or the link itself."""
+    m = THREAD.search(str(link or ""))
+    return (m.group(1), m.group(2) + m.group(3)) if m else link
 
 
 def _local(stamp):
@@ -95,18 +129,25 @@ def _fields(a, me):
 
 
 def sync(reg, feed, today, now):
-    """Puts aag's tasks on the list as aag has them now (ids "aag-…"), and takes off the ones it no
-    longer lists. One that finished before today isn't added. Returns whether the list changed."""
-    me, before = feed.get("me"), json.dumps(reg["tasks"], sort_keys=True)
+    """Puts aag's tasks on the list as aag has them now, and takes off the ones it no longer lists. A
+    task the refresh made from a DM thread (while the feed couldn't be read) becomes that thread's aag
+    task; a new one is "aag-…", unless it finished before today. Returns whether the list changed."""
+    me, before = feed.get("me"), json.dumps(reg, sort_keys=True)
     listed = {str(a["id"]): a for a in feed["tasks"] if isinstance(a, dict) and a.get("id") and a.get("title")}
-    kept = []
+    kept, made = [], {}  # made: a DM thread -> the refresh's task for it
     for t in reg["tasks"]:
         if not t.get("aag"):
             kept.append(t)
+            for k in {thread(s["link"]) for s in t["sources"]} - {None} if "title" not in t.get("mine", []) else ():
+                made.setdefault(k, t)  # not one you wrote yourself
         elif t["aag"]["id"] in listed:
             _apply(t, listed.pop(t["aag"]["id"]), me, now)
             kept.append(t)
     for a in listed.values():
+        t = made.pop(thread(a.get("dm")), None)
+        if t is not None and not t.get("aag"):
+            _apply(t, a, me, now)
+            continue
         f = _fields(a, me)
         if f["status"] == "done" and not str(f["done_at"]).startswith(today):
             continue
@@ -115,118 +156,137 @@ def sync(reg, feed, today, now):
         _apply(t, a, me, now)
         kept.append(t)
     reg["tasks"] = kept
-    return json.dumps(kept, sort_keys=True) != before
+    if feed.get("dm"):
+        reg["aag_dm"] = feed["dm"]  # the DM channel, for the refresh when the feed can't be read
+    return json.dumps(reg, sort_keys=True) != before
 
 
 def _apply(t, a, me, now):
-    f, move = _fields(a, me), f"{a.get('column')}: {a.get('next')}"
+    """aag's word on one of its tasks. Its why is aag's state line until the refresh wrote what the DM
+    thread says; the links the refresh added stay."""
+    f, move, was = _fields(a, me), f"{a.get('column')}: {a.get('next')}", t.get("aag") or {}
+    ours = f["sources"]
+    if t.get("why") and t.get("why") != was.get("why"):
+        f.pop("why")  # the refresh wrote it, from the thread
+    keys = {_same(s["link"]) for s in ours}
+    f["sources"] = (ours + [s for s in t.get("sources", []) if s not in was.get("sources", [])
+                            and _same(s["link"]) not in keys])[:6]
     mine = set(t.get("mine") or [])
-    if "status" in mine and t.get("aag", {}).get("move") != move:
+    if "status" in mine and was.get("move") != move:
         mine.discard("status")  # your done or drop was about the move before: aag has the say again
     new = {k: v for k, v in f.items() if not ("status" in mine and k in STATUS)}
     if any(t.get(k) != v for k, v in new.items()):
         t.update(new, updated=now)
     t["mine"] = sorted(mine)
-    t["aag"] = {"id": str(a["id"]), "move": move, **f}  # what extra() puts back after the refresh
+    t["aag"] = {**_fields(a, me), "id": str(a["id"]), "move": move, "sources": ours}  # what aag said: extra() puts it back
 
 
 def extra(item, current):
-    """For tasks.extra: an aag task stays as aag says through the refresh and the answers to your
-    notes. What Claude changed on one is put back, except what you set yourself."""
+    """For tasks.extra: while the feed can be read, an aag task's state stays as aag says through the
+    refresh and the answers to your notes (what you set yourself stays yours); the refresh's why and
+    links stay too. While it can't, the refresh has the say."""
     a = (current or {}).get("aag")
-    if not a:
+    if not a or not live():
         return {}
     mine = set(current.get("mine") or [])
-    return {k: a[k] for k in ("title", "next", "why", "who", "sources", *STATUS)
-            if k in a and k not in mine and not ("status" in mine and k in STATUS)}
+    return {k: a[k] for k in ("title", "next", "who", *STATUS) if k in a and k not in mine
+            and not ("status" in mine and k in STATUS)}
 
 
-def covers(feed, link):
-    """A link to what aag already tracks: one of its PRs, or a message in your DM with the bot."""
-    prs = {(a.get("pr") or {}).get("url") for a in feed["tasks"] if isinstance(a, dict)} - {None}
-    dm = feed.get("dm")
-    return any(link == u or link.startswith(u + "/") or link.startswith(u + "#") for u in prs) \
-        or bool(dm and f"/archives/{dm}/" in link)
-
-
-def rules(feed):
-    """For app.RULES: what the hourly refresh leaves to aag."""
-    prs = sorted({(a.get("pr") or {}).get("key") for a in feed["tasks"] if isinstance(a, dict)} - {None})
-    text = ("Tasks with an id starting aag- come from {who}'s agent (aag), which keeps them current: leave them out "
-            "of \"updates\". Don't add tasks for what aag already covers: "
-            + (f"Slack messages in {{who}}'s DM with the agent's bot (channel {feed['dm']}), " if feed.get("dm") else
-               "Slack DMs from {who}'s agent's bot, ")
-            + "the agents' threads it links, "
-            + (f"or these PRs: {', '.join(prs)}." if prs else "or PRs it works on."))
+def rules(reg):
+    """For app.RULES: how the refresh reads the agent's DMs, and what it leaves to aag's feed."""
+    ours = [t for t in reg["tasks"] if t.get("aag") and t["status"] in tasks.OPEN]
+    dm = reg.get("aag_dm")
+    text = ("{who}'s agent (aag; its Slack bot is \"{who}'s agent\") DMs {who} in one thread per task it works on"
+            + (f", in DM channel {dm}" if dm else "") + ". Read those threads like any other DM: what the agent asks "
+            "or tells {who} there, or waits on {who} for, is a task, with the thread as its source. Skip the bot's "
+            "notices that aren't about one task (online, offline, paused, reminders that list several).")
+    if ours:
+        text += ("\nThese tasks on the list are the agent's, one per thread: "
+                 + "; ".join(f"{t['id']} ({', '.join(x['label'] + ' ' + x['link'] if x['label'].endswith('thread') else x['label'] for x in t['aag']['sources'])})"
+                             for t in ours)
+                 + ". For a thread that's one of these, write what it says into an update of that task (why: what the "
+                 "agent asks or reports, in a line), not a new task, and don't add tasks for their PRs. "
+                 + ("The agent's own feed keeps their status, title and next step: leave those out."
+                    if live() else "The agent's own feed can't be read just now: update their status from the thread too."))
     return text.replace("{who}", "\0").replace("{", "{{").replace("}", "}}").replace("\0", "{who}")
 
 
 def after_refresh(_reg):
-    """For app.AFTER_REFRESH: a task the refresh added anyway about what aag covers is taken off again
-    (read again under the lock: the page may have changed the list since)."""
-    with _lock:
-        feed = _feed["feed"]
-    if not feed:
-        return
+    """For app.AFTER_REFRESH: a task the refresh added anyway about one of the agent's tasks (its DM
+    thread, or its PR) is folded into that one, its why and links, and taken off. So is one from the
+    agent's DM that's about none of them, while the feed can be read (a notice). Read again under the
+    lock: the page may have changed the list since."""
     with tasks.LOCK:
         reg = tasks.load()
-        added = [t for t in reg["tasks"] if t["id"] not in _known and not t.get("aag") and "title" not in t.get("mine", [])]
-        drop = {t["id"] for t in added if (links := [s["link"] for s in t["sources"] if s["link"]])
-                and all(covers(feed, x) for x in links)}
-        if drop:
-            reg["tasks"] = [t for t in reg["tasks"] if t["id"] not in drop]
+        ours, at = [t for t in reg["tasks"] if t.get("aag")], {}
+        for t in ours:
+            for s in t["aag"]["sources"]:
+                at[thread(s["link"]) or s["link"].split("#")[0]] = t
+        dm, folded = reg.get("aag_dm"), set()
+        for n in [t for t in reg["tasks"] if t["id"] not in _known and not t.get("aag") and "title" not in t.get("mine", [])]:
+            links = [s["link"] for s in n["sources"] if s["link"]]
+            hit = next((at[k] for k in (thread(x) or re.sub(r"(/pull/\d+).*", r"\1", x) for x in links) if k in at), None)
+            if hit:
+                if n.get("why") and hit.get("why") == hit["aag"].get("why"):
+                    hit["why"] = n["why"]  # what the thread says, over aag's state line
+                seen = {s["link"] for s in hit["sources"]}
+                hit["sources"] = (hit["sources"] + [s for s in n["sources"] if s["link"] and s["link"] not in seen])[:6]
+            elif not (live() and dm and links and all(f"/archives/{dm}/" in x for x in links)):
+                continue
+            folded.add(n["id"])
+        if folded:
+            reg["tasks"] = [t for t in reg["tasks"] if t["id"] not in folded]
             tasks.save(reg)
-            print(f"aag: took {len(drop)} task(s) about aag's work off the refresh", file=sys.stderr)
+            print(f"aag: folded {len(folded)} task(s) the refresh added about the agent's work", file=sys.stderr)
 
 
 def poll():
     """Reads aag once and puts its tasks on the list. On a failure the last ones stay, with the error
-    and since when it fails."""
+    and since when it fails; the refresh keeps them from the DM threads meanwhile."""
     global _known
     s = store.settings()
-    if not s.get("aag"):  # turned off: its tasks go too
-        app.RULES = _rules
-        with _lock:
-            _feed.update(feed=None, at=None, error=None, since=None)
-        with tasks.LOCK:
-            reg = tasks.load()
-            if any(t.get("aag") for t in reg["tasks"]):
-                reg["tasks"] = [t for t in reg["tasks"] if not t.get("aag")]
-                tasks.save(reg)
-        return
+    setting = s.get("aag")
+    feed = error = None
     try:
-        feed = read(s["aag"])
+        cmd = command(setting)
+        feed = read(cmd) if cmd else None
     except Exception as e:
-        with _lock:
-            _feed.update(error=str(e)[-200:], since=_feed["since"] or store.now())
-        return
+        error = str(e)[-200:]
+    with _lock:
+        if feed:
+            _feed.update(feed=feed, at=store.now(), error=None, since=None)
+        elif error:
+            _feed.update(error=error, since=_feed["since"] or store.now())
+        else:  # off, or no aag here
+            _feed.update(feed=None, at=None, error=None, since=None)
     with tasks.LOCK:
         reg = tasks.load()
-        if sync(reg, feed, store.today(), store.now()):
+        changed = sync(reg, feed, store.today(), store.now()) if feed else False
+        if setting == "off" and any(t.get("aag") for t in reg["tasks"]):  # its tasks go too
+            reg["tasks"], changed = [t for t in reg["tasks"] if not t.get("aag")], True
+        if changed:
             tasks.save(reg)
         _known = {t["id"] for t in reg["tasks"]}
-    with _lock:
-        _feed.update(feed=feed, at=store.now(), error=None, since=None)
-    app.RULES = "\n\n".join(x for x in (_rules, rules(feed)) if x)
+    app.RULES = "\n\n".join(x for x in (_rules, "" if setting == "off" else rules(reg)) if x)
     # the agents' own Claude sessions run in aag's workdir: counted, not listed
-    work = feed.get("workdir")
-    if s["aag"] == "local" and work and work not in s.get("agent_paths", []):
+    work = (feed or {}).get("workdir")
+    if setting in (None, "local") and work and work not in s.get("agent_paths", []):
         store.write(store.SETTINGS, {**s, "agent_paths": [*s.get("agent_paths", []), work]})
 
 
 def state():
-    """For app.STATE: the "Your agent" card's data, while the "aag" setting is there."""
-    setting = store.settings().get("aag")
-    if not setting:
-        return {}
+    """For app.STATE: the "Your agent" card's data, once aag was read (or reading it failed)."""
     with _lock:
-        return {"aag": {**_feed, "where": setting}}
+        f = dict(_feed)
+    if not f["feed"] and not f["error"]:
+        return {}
+    return {"aag": {**f, "where": store.settings().get("aag") or "local"}}
 
 
 def start(wait=10):
-    """From `docket run`: the hooks, and a read of aag every minute while settings.json has "aag".
-    Returns after the first read (at most `wait` seconds): the first refresh starts right after, and
-    it should know what aag covers."""
+    """From `docket run`: the hooks, and a read of aag every minute. Returns after the first read (at
+    most `wait` seconds): the first refresh starts right after, and it should know what aag has."""
     global _rules
     _rules = app.RULES
     shown, kept = app.STATE, tasks.extra

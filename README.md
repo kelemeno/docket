@@ -9,7 +9,7 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
 
 ## What it does
 
-- **A list that carries over.** Every hour from 08:00 to 20:00 Claude reads only what's new since the
+- **A list that carries over.** Every 15 minutes from 08:00 to 20:00 Claude reads only what's new since the
   last run and updates the list. It adds what you owe (promises, unanswered questions, review requests,
   decisions, deadlines), updates open tasks and adds today's meetings. Every task links to its source:
   the Slack thread, the PR, the doc.
@@ -19,7 +19,7 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   - A task you dropped or finished doesn't come back.
   - An overdue task rolls to today and shows how often it slipped.
 - **Reply to Claude** on a task (`c`): "ask Sam for a review in the team thread". It finds the thread,
-  links it, rewrites the next step and answers under your note, usually in about a minute. The hourly
+  links it, rewrites the next step and answers under your note, usually in about a minute. The
   refresh reads your notes too.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
   **Waiting** (on someone else), **Drop**, **Open** the source, **Undo**.
@@ -50,7 +50,7 @@ docket run
 
 `docket setup` asks Claude which tools it has and keeps only the read-only ones (below). `--name` is
 how the prompts refer to you. `docket run` serves the page at http://127.0.0.1:8766 (`docket open`
-opens it) and refreshes the list every hour. The first refresh reads the last three days and takes a
+opens it) and refreshes the list every 15 minutes. The first refresh reads the last three days and takes a
 few minutes.
 
 Other commands: `docket refresh` reads what's new now, and `docket now` prints the top of today's list.
@@ -66,19 +66,26 @@ The folder is `$DOCKET_HOME`, or `~/.local/share/docket` by default. In it, `set
 |---|---|
 | `tools` / `refused` | the tools Claude may use, and the ones it may not; filled in by `docket setup` |
 | `who` | your first name, as the prompts call you |
-| `every_min` | minutes between refreshes (default 60) |
+| `every_min` | minutes between refreshes (default 15; each is a Claude run, so fewer use less of your plan) |
 | `model` | the Claude model for refreshes and replies (default `sonnet`) |
 | `agent_paths` | folders where your background agents run: their sessions are only counted, not listed |
-| `aag` | your agent's work ([below](#your-agent-aag)): `"local"`, or `"ssh HOST"` where aag runs on a server |
+| `aag` | your agent's feed ([below](#your-agent-aag)): unset for the aag on this computer, `"ssh HOST"` where aag runs on a server, or `"off"` |
 
 The page's port is `$DOCKET_PORT` (default 8766).
 
 ### Your agent (aag)
 
-If you run aag (auto-agents: Slack agents that write and review PRs for you), Docket shows its work too.
-Set `"aag": "local"`, or `"ssh HOST"` when aag runs on a server, and Docket reads `aag status --json`
-every minute. Over SSH it never asks for a password (BatchMode), and nothing has to listen on the server.
-Use `"ssh HOST /path/to/aag"` when `aag` isn't on the PATH an SSH command gets there.
+If you run aag (auto-agents: Slack agents that write and review PRs for you), Docket shows its work too,
+from two places that make one list:
+
+- **Slack, always.** Your agent DMs you in one thread per task, and the refresh reads those threads
+  like any other DM. Their asks become tasks, wherever aag runs.
+- **aag's own feed, when it can be read.** Every minute Docket runs `aag status --json`: the aag on this
+  computer, found by itself, or `"ssh HOST"` where aag runs on a server. Over SSH it never asks for a
+  password (BatchMode), and nothing has to listen on the server. Use `"ssh HOST /path/to/aag"` when
+  `aag` isn't on the PATH an SSH command gets there, and `"off"` for no feed.
+
+How the feed's tasks show:
 
 - A task whose next move is yours (say go, review, sign, merge) is on the list, linked to its DM thread
   and its PR. One the agent works on, or that waits on others, is under **Waiting**. A finished one is
@@ -87,10 +94,13 @@ Use `"ssh HOST /path/to/aag"` when `aag` isn't on the PATH an SSH command gets t
 - The **Your agent** card on the side has the rest: who has each move, what each agent is doing now,
   where each PR stands, and the links. When aag can't be read, the card keeps the last read and says
   since when.
-- aag keeps these tasks. The hourly refresh leaves them alone and doesn't add what they cover: your DMs
-  with the bot, and the PRs aag tracks. Your snooze, priority and kind on one stay yours. Your done or
-  drop stays until its next move changes.
-- With `"local"`, aag's workdir joins `agent_paths`, so its agents' sessions are only counted.
+
+The two meet in the DM thread: one task per thread. While the feed can be read, it has the say on a
+task's status, title, next step and who's waiting. The refresh adds what the thread says (the why) and
+its links, and doesn't add tasks for the PRs aag tracks. While the feed can't be read, the refresh keeps
+these tasks from the threads, and the feed takes them back when it returns. Your snooze, priority and
+kind on one stay yours. Your done or drop stays until its next move changes. With the local aag, its
+workdir joins `agent_paths`, so its agents' sessions are only counted.
 
 ## Safety
 
@@ -132,7 +142,7 @@ subpackage (`yourapp/docket/`) and change it through these hooks instead of edit
 |---|---|
 | `store.configure(home=…, settings=…)` | where `tasks.json` lives, and which settings file to read |
 | `tasks.extra = fn(item, current) → dict` | fields of your own kept on tasks and meetings (e.g. what may be shared elsewhere) |
-| `app.RULES = "…"` | more rules appended to the hourly refresh prompt (`{who}` is filled in) |
+| `app.RULES = "…"` | more rules appended to the refresh prompt (`{who}` is filled in) |
 | `app.AFTER_REFRESH.append(fn(reg))` | something to do with the list after each refresh |
 | `app.STATE = fn() → dict` | more fields in what the page loads |
 | `app.serve(port, index=…, routes={…})` | your own page around `page.js`, and GET routes of your own |

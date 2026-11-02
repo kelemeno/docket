@@ -2,7 +2,7 @@
 
 Everything lives in one folder, readable only by you: $DOCKET_HOME, or ~/.local/share/docket.
 
-    settings.json   {"tools": [...], "refused": [...], "who": "Sam", "every_min": 60, "model": "sonnet"}
+    settings.json   {"tools": [...], "refused": [...], "who": "Sam", "every_min": 15, "model": "sonnet"}
     tasks.json      the task list (tasks.py)
 """
 import datetime as dt

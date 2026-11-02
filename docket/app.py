@@ -1,6 +1,6 @@
 """Docket: a work task list kept by your own Claude Code, and a page on this computer to work it.
 
-Every hour (08:00–20:00) Claude reads only what's new since the last successful run (Slack, email,
+Every 15 minutes (08:00–20:00) Claude reads only what's new since the last successful run (Slack, email,
 calendar, GitHub, Linear, Notion: whatever your Claude Code is connected to) and updates the list
 (tasks.py): new things you owe, updates to open ones, done only with evidence, today's meetings.
 On the page you can write to Claude about a task ("ask Sam for a review in the team thread"): it
@@ -119,7 +119,7 @@ same shape as the task above. "waiting" only when there's nothing for {who} to d
 else acts; a ping, a nudge or a question to ask is still {who}'s step, so the task stays open."""
 
 
-# For an app that carries Docket inside it: more rules for the hourly refresh (appended to its prompt),
+# For an app that carries Docket inside it: more rules for the refresh (appended to its prompt),
 # and what to do with the list after each refresh.
 RULES = ""
 AFTER_REFRESH = []
@@ -460,14 +460,14 @@ def serve(port=PORT, index=None, routes=None):
 
 
 def run(port=PORT):
-    """Serves the page and refreshes the list every `every_min` minutes (settings, default 60) from
+    """Serves the page and refreshes the list every `every_min` minutes (settings, default 15) from
     08:00 to 20:00, until stopped."""
     _, page = serve(port)
     print(f"docket: http://127.0.0.1:{port}", file=sys.stderr)
     last = 0
     while True:
         s = store.settings()
-        if s.get("tools") and 8 <= dt.datetime.now().hour < 20 and time.time() - last > s.get("every_min", 60) * 60:
+        if s.get("tools") and 8 <= dt.datetime.now().hour < 20 and time.time() - last > s.get("every_min", 15) * 60:
             last = time.time()
             page.run()
         time.sleep(60)
