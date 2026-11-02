@@ -43,7 +43,7 @@ your tools (Slack, calendar, etc.), and optionally the [GitHub CLI](https://cli.
 the PR panel.
 
 ```bash
-pip install git+https://github.com/OWNER/docket.git
+pip install git+https://github.com/kelemeno/docket.git
 docket setup --name Sam
 docket run
 ```
