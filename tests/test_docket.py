@@ -274,7 +274,9 @@ class Hooks(unittest.TestCase):
             f.write("<p>mine</p>")
         try:
             with mock.patch.object(app, "_read_prs"):
-                server, _ = app.serve(0, index=f.name, routes={"/hub": lambda: {"url": "http://hub"}})
+                with mock.patch.object(app, "STATE", lambda: {"share": True}):
+                    server, page = app.serve(0, index=f.name, routes={"/hub": lambda: {"url": "http://hub"}})
+                    self.assertTrue(page.state()["share"])
             url = f"http://127.0.0.1:{server.server_port}"
             with urllib.request.urlopen(url + "/") as r:
                 self.assertEqual(r.read(), b"<p>mine</p>")

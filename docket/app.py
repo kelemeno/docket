@@ -123,6 +123,7 @@ else acts; a ping, a nudge or a question to ask is still {who}'s step, so the ta
 # and what to do with the list after each refresh.
 RULES = ""
 AFTER_REFRESH = []
+STATE = dict  # more for the page's state: a function returning a dict
 
 
 def _env():
@@ -389,7 +390,7 @@ class Page:
         return {"today": today, "now": store.now(), "tasks": reg["tasks"],
                 "meetings": m.get("items", []) if m.get("day") == today else [],
                 "refreshed": reg.get("refreshed"), "sessions": listed, "running": self.busy.locked(),
-                "error": self.error, "folder": str(store.HOME), "prs": prs()}
+                "error": self.error, "folder": str(store.HOME), "prs": prs(), **STATE()}
 
 
 def serve(port=PORT, index=None, routes=None):

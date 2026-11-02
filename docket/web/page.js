@@ -3,7 +3,8 @@
 // it inside its own:
 //
 //   const work = docketPage(element, { status: element for "Updated 11:20", run: the Refresh button,
-//                                      assistant: what the reply box calls Claude (default "Claude") })
+//                                      assistant: what the reply box calls Claude (default "Claude"),
+//                                      foot(data): the line under the side panel })
 //
 // Needs esc.js and docket.js loaded first, and the server's /state, /task, /reply and /refresh.
 window.docketPage = function (el, opts = {}) {
@@ -98,7 +99,7 @@ window.docketPage = function (el, opts = {}) {
       prTab = b.dataset.prtab; try { localStorage.setItem("docket-pr-tab", prTab); } catch {}
       return d;
     },
-    foot: (d) => `Kept on this computer in ${d.folder}.`,
+    foot: opts.foot || ((d) => `Kept on this computer in ${d.folder}.`),
     rendered(d) {
       if (opts.run) { opts.run.disabled = !!d.running; opts.run.textContent = d.running ? "Reading…" : "Refresh"; }
       if (opts.status) opts.status.innerHTML = d.error ? `<span class="err">Last refresh failed: ${esc(d.error)}</span>`

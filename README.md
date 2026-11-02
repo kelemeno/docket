@@ -114,8 +114,9 @@ subpackage (`yourapp/docket/`) and change it through these hooks instead of edit
 | `tasks.extra = fn(item, current) → dict` | fields of your own kept on tasks and meetings (e.g. what may be shared elsewhere) |
 | `app.RULES = "…"` | more rules appended to the hourly refresh prompt (`{who}` is filled in) |
 | `app.AFTER_REFRESH.append(fn(reg))` | something to do with the list after each refresh |
+| `app.STATE = fn() → dict` | more fields in what the page loads |
 | `app.serve(port, index=…, routes={…})` | your own page around `page.js`, and GET routes of your own |
-| `docketPage(el, {assistant: "…"})` | what the reply box calls the one answering |
+| `docketPage(el, {assistant: "…", foot: fn(data)})` | what the reply box calls the one answering, and the line under the side panel |
 
 ## Tests
 
