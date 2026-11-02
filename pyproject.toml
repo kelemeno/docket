@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docket"
+version = "0.1.0"
+description = "A work task list kept current by your own Claude Code, and a local page to work it"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+docket = "docket.__main__:main"
+
+[tool.setuptools]
+packages = ["docket"]
+
+[tool.setuptools.package-data]
+docket = ["web/*"]
