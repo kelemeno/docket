@@ -1,6 +1,6 @@
-// The work page: Docket's task list in the cockpit, with today's meetings, your pull requests and your
-// Claude Code sessions on the side. index.html is the whole page; an app that carries Docket can put
-// it inside its own:
+// The work page: Docket's task list in the cockpit, with today's meetings, your agent (aag.py), your
+// pull requests and your Claude Code sessions on the side. index.html is the whole page; an app that
+// carries Docket can put it inside its own:
 //
 //   const work = docketPage(element, { status: element for "Updated 11:20", run: the Refresh button,
 //                                      assistant: what the reply box calls Claude (default "Claude"),
@@ -77,6 +77,37 @@ window.docketPage = function (el, opts = {}) {
       + (body || `<p class="empty">${p.loading ? "Reading your PRs…" : prTab === "reviewing" ? "Nothing to review from the last two weeks." : "No open PRs in the last two weeks."}</p>`)
       + `<p class="meta" style="margin:8px 0 0">${older ? `+ ${older} older · ` : ""}<a href="https://github.com/pulls${prTab === "reviewing" ? "/review-requested" : ""}" target="_blank" rel="noopener">All on GitHub ↗</a></p>`;
   }
+  // Your agent (aag), when settings.json has "aag": its tasks by who has the move, what each agent does
+  // now, the PR's state, and the links. Read every minute; when that fails, the last read stays.
+  const AAG = [["needs_you", "Needs you", "bad"], ["working", "Working", "go"], ["waiting", "Waiting on others", "wait"], ["done", "Done today", ""]];
+  const CI = { success: "CI ✓", failure: "CI failing", pending: "CI running" };
+  function agent(data) {
+    const a = data.aag, f = a.feed, hhmm = (s) => esc(String(s || "").slice(11, 16));
+    const head = (a.error ? `<p class="err" style="font-size:13px">aag unreachable since ${hhmm(a.since)}: ${esc(a.error)}</p>` : "")
+      + (!f ? "" : f.daemon === "off" ? `<p class="meta"><span class="st bad">Off</span>: <code>aag start</code> turns it on.</p>`
+        : f.daemon === "paused" ? `<p class="meta"><span class="st wait">Paused</span>: no agent runs until you DM it <code>on</code>.</p>` : "")
+      + (f && f.offline ? `<p class="meta"><span class="st wait">Offline</span>: no ${[f.offline.slack && "Slack", f.offline.github && "GitHub"].filter(Boolean).join(" or ")}; nothing reaches the agents.</p>` : "")
+      + (f && f.sign ? `<p class="meta">To sign ${esc(f.sign.prs.join(", "))}: <code>${esc(f.sign.command)}</code></p>` : "");
+    if (!f) return head || `<p class="empty">Reading your agent…</p>`;
+    // done today: closed then, or (a review humans approved, still open in aag) last changed then
+    const day = (t) => new Date(t.status === "done" || t.status === "cancelled" ? t.statusAt : t.updatedAt).toLocaleDateString("sv");
+    const shown = f.tasks.filter((t) => t.column !== "done" || day(t) === data.today);
+    const ln = (href, text) => href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${text}</a>` : "";
+    const row = (t, tone) => {
+      const p = t.pr;
+      const facts = p ? [ln(p.url, esc(p.key.split("/")[1])), CI[p.ci], p.draft && "draft", p.conflicts && "conflicts",
+                         p.review === "APPROVED" && "approved", p.unresolved && `${p.unresolved} unresolved`].filter(Boolean).join(" ") : "";
+      const sub = [`<span class="st ${tone}">${esc(t.next)}</span>`, t.now && "now: " + esc(t.now.text), facts,
+                   ln(t.dm, "DM"), ln(t.thread, "thread"), t.embargo && "embargo", t.cost >= 1 && "$" + Math.round(t.cost)].filter(Boolean).join(" · ");
+      return `<div class="pr">${ln(t.dm || (p && p.url) || t.thread, esc(t.title)) || esc(t.title)}<div class="s">${sub}</div></div>`;
+    };
+    const body = AAG.map(([col, title, tone]) => {
+      const l = shown.filter((t) => t.column === col);
+      return l.length ? `<div class="sub">${title}</div>` + l.map((t) => row(t, tone)).join("") : "";
+    }).join("");
+    return head + (body || `<p class="empty">Nothing for your agent this week.</p>`)
+      + `<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
+  }
   const work = docket(el, {
     assistant: opts.assistant,
     actions: ["done", "snooze", "waiting", "drop", "open"],
@@ -98,7 +129,7 @@ window.docketPage = function (el, opts = {}) {
     refresh: () => opts.run && opts.run.click(),
     empty: (d) => d.refreshed ? `<p class="title">Nothing due today.</p><p class="meta">Everything open is waiting on others or planned for later.</p>`
       : `<p class="title">No tasks yet.</p><p class="meta">The first refresh reads the last 3 days of whatever your Claude Code is connected to: Slack, email, calendar, GitHub, Linear, Notion. It takes a few minutes.</p>`,
-    side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section><section class="card"><h2>Pull requests</h2>${prs(d)}</section><section class="card"><h2>Claude sessions</h2>${sessions(d)}</section>`,
+    side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? `<section class="card"><h2>Your agent <span class="count">${((d.aag.feed || {}).tasks || []).filter((t) => t.column === "needs_you").length || ""}</span></h2>${agent(d)}</section>` : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section><section class="card"><h2>Claude sessions</h2>${sessions(d)}</section>`,
     sideClick(e, d) {
       const b = e.target.closest("button[data-prtab]"); if (!b) return;
       prTab = b.dataset.prtab; try { localStorage.setItem("docket-pr-tab", prTab); } catch {}

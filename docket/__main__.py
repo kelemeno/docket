@@ -7,7 +7,7 @@ import argparse
 import sys
 import webbrowser
 
-from . import app, store, tasks
+from . import aag, app, store, tasks
 
 
 def main(argv=None):
@@ -22,6 +22,7 @@ def main(argv=None):
         print(f"Kept in {store.SETTINGS}. Check the allowed list; edit the file to change it.")
     elif a.command == "run":
         try:
+            aag.start()
             app.run()
         except KeyboardInterrupt:
             pass

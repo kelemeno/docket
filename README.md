@@ -69,8 +69,27 @@ The folder is `$DOCKET_HOME`, or `~/.local/share/docket` by default. In it, `set
 | `every_min` | minutes between refreshes (default 60) |
 | `model` | the Claude model for refreshes and replies (default `sonnet`) |
 | `agent_paths` | folders where your background agents run: their sessions are only counted, not listed |
+| `aag` | your agent's work ([below](#your-agent-aag)): `"local"`, or `"ssh HOST"` where aag runs on a server |
 
 The page's port is `$DOCKET_PORT` (default 8766).
+
+### Your agent (aag)
+
+If you run aag (auto-agents: Slack agents that write and review PRs for you), Docket shows its work too.
+Set `"aag": "local"`, or `"ssh HOST"` when aag runs on a server, and Docket reads `aag status --json`
+every minute. Over SSH it never asks for a password (BatchMode), and nothing has to listen on the server.
+Use `"ssh HOST /path/to/aag"` when `aag` isn't on the PATH an SSH command gets there.
+
+- A task whose next move is yours (say go, review, sign, merge) is on the list, linked to its DM thread
+  and its PR. One the agent works on, or that waits on others, is under **Waiting**. A finished one is
+  under **Handled today**. A task leaves the list when aag stops listing it.
+- The **Your agent** card on the side has the rest: who has each move, what each agent is doing now,
+  where each PR stands, and the links. When aag can't be read, the card keeps the last read and says
+  since when.
+- aag keeps these tasks. The hourly refresh leaves them alone and doesn't add what they cover: your DMs
+  with the bot, and the PRs aag tracks. Your snooze, priority and kind on one stay yours. Your done or
+  drop stays until its next move changes.
+- With `"local"`, aag's workdir joins `agent_paths`, so its agents' sessions are only counted.
 
 ## Safety
 
