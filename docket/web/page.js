@@ -97,7 +97,8 @@ window.docketPage = function (el, opts = {}) {
       const p = t.pr;
       const facts = p ? [ln(p.url, esc(p.key.split("/")[1])), CI[p.ci], p.draft && "draft", p.conflicts && "conflicts",
                          p.review === "APPROVED" && "approved", p.unresolved && `${p.unresolved} unresolved`].filter(Boolean).join(" ") : "";
-      const sub = [`<span class="st ${tone}">${esc(t.next)}</span>`, t.now && "now: " + esc(t.now.text), facts,
+      const now = t.now && t.now.text.toLowerCase() !== String(t.next).toLowerCase() && "now: " + esc(t.now.text);  // a working one's move is often it
+      const sub = [`<span class="st ${tone}">${esc(t.next)}</span>`, now, facts,
                    ln(t.dm, "DM"), ln(t.thread, "thread"), t.embargo && "embargo", t.cost >= 1 && "$" + Math.round(t.cost)].filter(Boolean).join(" · ");
       return `<div class="pr">${ln(t.dm || (p && p.url) || t.thread, esc(t.title)) || esc(t.title)}<div class="s">${sub}</div></div>`;
     };
