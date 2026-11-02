@@ -223,14 +223,17 @@ def state():
         return {"aag": {**_feed, "where": setting}}
 
 
-def start():
-    """From `docket run`: the hooks, and a read of aag every minute while settings.json has "aag"."""
+def start(wait=10):
+    """From `docket run`: the hooks, and a read of aag every minute while settings.json has "aag".
+    Returns after the first read (at most `wait` seconds): the first refresh starts right after, and
+    it should know what aag covers."""
     global _rules
     _rules = app.RULES
     shown, kept = app.STATE, tasks.extra
     app.STATE = lambda: {**shown(), **state()}
     tasks.extra = lambda item, current: {**kept(item, current), **extra(item, current)}
     app.AFTER_REFRESH.append(after_refresh)
+    first = threading.Event()
 
     def loop():
         while True:
@@ -238,5 +241,7 @@ def start():
                 poll()
             except Exception as e:  # a bad tasks.json, say: the next minute tries again
                 print(f"aag: {e!r}", file=sys.stderr)
+            first.set()
             time.sleep(EVERY)
     threading.Thread(target=loop, daemon=True).start()
+    first.wait(wait)

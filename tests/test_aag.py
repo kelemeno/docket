@@ -1,6 +1,7 @@
 """Your agent's tasks on the list (aag.py): where each goes, what stays yours, what the refresh leaves
 alone, and reading aag here or over SSH."""
 import subprocess
+import time
 import unittest
 from unittest import mock
 
@@ -164,3 +165,11 @@ class Reading(unittest.TestCase):
         store.write(store.SETTINGS, {k: v for k, v in self.settings.items() if k != "aag"})
         aag.poll()
         self.assertEqual((aag.state(), tasks.load()["tasks"]), ({}, []))
+
+    def test_docket_run_goes_on_once_aag_was_read_so_the_first_refresh_knows_what_it_covers(self):
+        read = []
+        with mock.patch.object(aag, "poll", lambda: (time.sleep(0.2), read.append(1))), mock.patch.object(aag, "EVERY", 3600), \
+             mock.patch.object(app, "STATE", dict), mock.patch.object(app, "AFTER_REFRESH", []), mock.patch.object(tasks, "extra", tasks.extra):
+            aag.start()
+            self.assertEqual(read, [1])
+            self.assertIn(aag.after_refresh, app.AFTER_REFRESH)
