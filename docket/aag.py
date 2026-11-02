@@ -1,7 +1,8 @@
 """Your agent's work on the list: aag (auto-agents) writes and reviews PRs for you from Slack, and every
 minute Docket reads what it has (`aag status --json`, on this computer or over SSH where aag runs on a
 server). A task whose next move is yours is open in the list, linked to its DM thread and its PR; one
-the agent works on, or that waits on others, is waiting; a finished one is handled. The side panel's
+the agent works on, or that waits on others, is waiting; a finished one is handled, and so is a review
+once the agents agree (approving and merging it is the author's and the humans' to do). The side panel's
 "Your agent" card has the rest: what each agent is doing now, and where each PR stands.
 
 aag keeps these tasks: the hourly refresh leaves them alone and skips what they cover (your DMs with
@@ -71,19 +72,24 @@ def _local(stamp):
         return None
 
 
+def finished(a):
+    """Done for you: closed in aag, or a review the agents agree on (aag waits on the humans for it,
+    unless it asks for your approval: then it's your move)."""
+    return a.get("column") == "done" or (a.get("role") == "reviewer" and a.get("status") == "agents_done"
+                                         and a.get("column") != "needs_you")
+
+
 def _fields(a, me):
     """What aag says about one of its tasks, as Docket's fields."""
     pr, column = a.get("pr") or {}, a.get("column")
-    done = column == "done"
+    done = finished(a)
     sources = [{"label": "DM thread", "link": a.get("dm")}, {"label": pr.get("key"), "link": pr.get("url")},
                {"label": "agents thread", "link": a.get("thread")}]
     return {"title": tasks._text(a.get("title"), 160), "next": tasks._text(a.get("next"), 240),
             "why": tasks._text(re.sub(r" \(\d+[mhd]\)$", "", str(a.get("line") or "")), 240),  # not its age: no news
             "who": tasks._text(a.get("requestedBy"), 80) if a.get("requestedBy") != me else "",
             "status": "done" if done else "open" if column == "needs_you" else "waiting",
-            # closed then; a review done once humans approved it (still open in aag): when that came
-            "done_at": _local(a.get("statusAt") if a.get("status") in ("done", "cancelled") else a.get("updatedAt"))
-            if done else None,
+            "done_at": _local(a.get("statusAt") or a.get("updatedAt")) if done else None,  # closed, or reviewed, then
             "closed_by": "aag" if done else None, "evidence": tasks._text(a.get("next"), 240) if done else "",
             "sources": tasks._sources([s for s in sources if s["label"] and s["link"]])}
 

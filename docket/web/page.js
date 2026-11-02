@@ -89,9 +89,9 @@ window.docketPage = function (el, opts = {}) {
       + (f && f.offline ? `<p class="meta"><span class="st wait">Offline</span>: no ${[f.offline.slack && "Slack", f.offline.github && "GitHub"].filter(Boolean).join(" or ")}; nothing reaches the agents.</p>` : "")
       + (f && f.sign ? `<p class="meta">To sign ${esc(f.sign.prs.join(", "))}: <code>${esc(f.sign.command)}</code></p>` : "");
     if (!f) return head || `<p class="empty">Reading your agent…</p>`;
-    // done today: closed then, or (a review humans approved, still open in aag) last changed then
-    const day = (t) => new Date(t.status === "done" || t.status === "cancelled" ? t.statusAt : t.updatedAt).toLocaleDateString("sv");
-    const shown = f.tasks.filter((t) => t.column !== "done" || day(t) === data.today);
+    // as on the list (aag.py finished): a review the agents agree on is done for you, and done shows for the day
+    const col = (t) => t.column === "done" || (t.role === "reviewer" && t.status === "agents_done" && t.column !== "needs_you") ? "done" : t.column;
+    const shown = f.tasks.filter((t) => col(t) !== "done" || new Date(t.statusAt || t.updatedAt).toLocaleDateString("sv") === data.today);
     const ln = (href, text) => href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${text}</a>` : "";
     const row = (t, tone) => {
       const p = t.pr;
@@ -101,8 +101,8 @@ window.docketPage = function (el, opts = {}) {
                    ln(t.dm, "DM"), ln(t.thread, "thread"), t.embargo && "embargo", t.cost >= 1 && "$" + Math.round(t.cost)].filter(Boolean).join(" · ");
       return `<div class="pr">${ln(t.dm || (p && p.url) || t.thread, esc(t.title)) || esc(t.title)}<div class="s">${sub}</div></div>`;
     };
-    const body = AAG.map(([col, title, tone]) => {
-      const l = shown.filter((t) => t.column === col);
+    const body = AAG.map(([column, title, tone]) => {
+      const l = shown.filter((t) => col(t) === column);
       return l.length ? `<div class="sub">${title}</div>` + l.map((t) => row(t, tone)).join("") : "";
     }).join("");
     return head + (body || `<p class="empty">Nothing for your agent this week.</p>`)

@@ -54,6 +54,16 @@ class Mapping(unittest.TestCase):
         self.assertEqual(reg["tasks"], [mine])  # yours stay
         self.assertFalse(aag.sync(reg, feed(), DAY, NOW))
 
+    def test_a_review_the_agents_agree_on_is_handled_unless_it_needs_your_approval(self):
+        reviewed = dict(role="reviewer", status="agents_done")
+        reg, by = synced(a("1", "waiting", "Reviewed; the merge is up to humans", **reviewed),
+                         a("2", "waiting", "Reviewed; kalman asks for the human review next", **reviewed, statusAt="2026-02-20T12:00:00Z"),
+                         a("3", "needs_you", "Your approval: the agents agree", **reviewed))
+        self.assertEqual(sorted(by), ["aag-1", "aag-3"], "one reviewed before today isn't added")
+        self.assertEqual((by["aag-1"]["status"], by["aag-1"]["done_at"], by["aag-3"]["status"]), ("done", NOW, "open"))
+        aag.sync(reg, feed(a("1", "waiting", "Fixes from kalman", role="reviewer")), DAY, NOW)  # new changes to review
+        self.assertEqual((reg["tasks"][0]["status"], reg["tasks"][0]["done_at"]), ("waiting", None))
+
     def test_your_own_task_waits_for_nobody_and_your_review_is_deep_work(self):
         _, by = synced(a("1", "needs_you", "Your review", requestedBy="valera", phase="owner_review"))
         self.assertEqual((by["aag-1"]["who"], by["aag-1"]["kind"]), ("", "deep"))

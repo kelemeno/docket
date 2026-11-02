@@ -82,7 +82,8 @@ Use `"ssh HOST /path/to/aag"` when `aag` isn't on the PATH an SSH command gets t
 
 - A task whose next move is yours (say go, review, sign, merge) is on the list, linked to its DM thread
   and its PR. One the agent works on, or that waits on others, is under **Waiting**. A finished one is
-  under **Handled today**. A task leaves the list when aag stops listing it.
+  under **Handled today**, and so is a review once the agents agree: approving and merging it is the
+  author's and the humans' to do. A task leaves the list when aag stops listing it.
 - The **Your agent** card on the side has the rest: who has each move, what each agent is doing now,
   where each PR stands, and the links. When aag can't be read, the card keeps the last read and says
   since when.
