@@ -22,7 +22,6 @@ import uuid
 
 from . import store
 
-PATH = store.HOME / "tasks.json"
 LOCK = threading.Lock()  # read-modify-write of the file, between the refresh and the page
 PRIORITY = ("P0", "P1", "P2")
 KIND = ("quick", "deep")
@@ -35,14 +34,24 @@ TEXT = {"title": 160, "next": 240, "why": 240, "who": 80}
 KEEP_NOTES = 12
 
 
+def extra(item, current):
+    """Fields of the host app's own on a task or meeting, from what Claude returned (`item`) and the
+    task as it is (`current`, None for a new one). Docket has none; an app replaces this function."""
+    return {}
+
+
+def path():
+    return store.HOME / "tasks.json"
+
+
 def load():
-    reg = store.read(PATH) or {}
+    reg = store.read(path()) or {}
     reg.setdefault("tasks", [])
     return reg
 
 
 def save(reg):
-    store.write(PATH, reg)
+    store.write(path(), reg)
 
 
 def _text(v, n):
@@ -66,7 +75,7 @@ def _new(n, today, now):
             "status": "waiting" if n.get("status") == "waiting" else "open",
             "do": n["do"] if isinstance(n.get("do"), str) and DAY.match(n["do"]) and n["do"] >= today else today,
             "rolled": 0, "sources": _sources(n.get("sources")), "sessions": _titles(n.get("sessions")),
-            "created": now, "updated": now, "mine": []}
+            "created": now, "updated": now, "mine": [], **extra(n, None)}
 
 
 def _titles(items):
@@ -87,7 +96,7 @@ def meetings(items):
     for m in (items if isinstance(items, list) else [])[:20]:
         start, end = (store.local_hhmm(m.get(k)) for k in ("start", "end")) if isinstance(m, dict) else (None, None)
         if start and end:
-            out.append({"start": start, "end": end, "title": _text(m.get("title"), 160)})
+            out.append({"start": start, "end": end, "title": _text(m.get("title"), 160), **extra(m, None)})
     return sorted(out, key=lambda m: m["start"])
 
 
@@ -130,6 +139,7 @@ def _update(t, u, mine, today, now):
     seen = {s["link"] or s["label"] for s in t["sources"]}
     t["sources"] = (t["sources"] + [s for s in _sources(u.get("sources")) if (s["link"] or s["label"]) not in seen])[:6]
     t["sessions"] = list(dict.fromkeys(t.get("sessions", []) + _titles(u.get("sessions"))))[:5]
+    t.update(extra(u, t))
     t["updated"] = now
 
 

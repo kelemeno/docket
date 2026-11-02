@@ -14,6 +14,16 @@ from pathlib import Path
 
 HOME = Path(os.environ.get("DOCKET_HOME") or Path.home() / ".local/share/docket")
 SETTINGS = HOME / "settings.json"
+
+
+def configure(home=None, settings=None):
+    """For an app that carries Docket inside it: its own folder for tasks.json, and its own settings file."""
+    global HOME, SETTINGS
+    if home:
+        HOME = Path(home)
+        SETTINGS = HOME / "settings.json"
+    if settings:
+        SETTINGS = Path(settings)
 HHMM = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
 
 
@@ -25,10 +35,11 @@ def read(path):
 
 
 def write(path, data):
-    """Whole or not at all, and only for you: the folder is 0700, the file 0600."""
+    """Whole or not at all, and only for you: the file is 0600, and Docket's own folder 0700."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.parent.chmod(0o700)
+    if path.parent == HOME:
+        path.parent.chmod(0o700)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as f:

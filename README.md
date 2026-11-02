@@ -100,7 +100,22 @@ docket(document.getElementById("view"), {
 });
 ```
 
-`docket.js` has the full interface at the top. `docket/web/index.html` is the example this repo uses.
+`docket.js` has the full interface at the top. `docket/web/page.js` is the work page built on it
+(`docketPage(element, {status, run, assistant})`), and `docket/web/index.html` is the page around it.
+
+## Carrying Docket inside another app
+
+Docket is standard-library Python with relative imports, so an app can carry a copy as a
+subpackage (`yourapp/docket/`) and change it through these hooks instead of editing it:
+
+| hook | what |
+|---|---|
+| `store.configure(home=…, settings=…)` | where `tasks.json` lives, and which settings file to read |
+| `tasks.extra = fn(item, current) → dict` | fields of your own kept on tasks and meetings (e.g. what may be shared elsewhere) |
+| `app.RULES = "…"` | more rules appended to the hourly refresh prompt (`{who}` is filled in) |
+| `app.AFTER_REFRESH.append(fn(reg))` | something to do with the list after each refresh |
+| `app.serve(port, index=…, routes={…})` | your own page around `page.js`, and GET routes of your own |
+| `docketPage(el, {assistant: "…"})` | what the reply box calls the one answering |
 
 ## Tests
 

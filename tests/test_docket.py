@@ -1,6 +1,7 @@
 """The task list's rules, your notes to Claude, the PR panel, and the local page's guards."""
 import json
 import os
+import tempfile
 import time
 import unittest
 import urllib.error
@@ -209,7 +210,7 @@ class Page(unittest.TestCase):
             return e.code, e.read()
 
     def test_the_page_and_its_scripts(self):
-        for path in ("/", "/docket.js", "/docket.css", "/esc.js"):
+        for path in ("/", "/docket.js", "/page.js", "/docket.css", "/esc.js"):
             self.assertEqual(self.call(path)[0], 200, path)
 
     def test_another_host_name_is_refused(self):
@@ -223,3 +224,62 @@ class Page(unittest.TestCase):
 
     def test_a_bad_action_is_a_400(self):
         self.assertEqual(self.call("/task", {"id": "nope", "action": "done"}, {"X-Docket": "1"})[0], 400)
+
+
+class Hooks(unittest.TestCase):
+    """What an app that carries Docket inside it can change, without changing Docket."""
+
+    def test_its_own_folder_and_settings_file(self):
+        home, settings = store.HOME, store.SETTINGS
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                store.configure(home=d, settings=os.path.join(d, "app.json"))
+                tasks.save({"tasks": [task()]})
+                self.assertTrue(os.path.exists(os.path.join(d, "tasks.json")))
+                store.write(store.SETTINGS, {"who": "Sam"})
+                self.assertEqual(store.settings()["who"], "Sam")
+        finally:
+            store.HOME, store.SETTINGS = home, settings
+
+    def test_fields_of_its_own_on_tasks_and_meetings(self):
+        def share(item, current):
+            if current is not None and "share" not in item:
+                return {}
+            return {"share": item.get("share") if item.get("share") in ("full", "none") else "none"}
+        with mock.patch.object(tasks, "extra", share):
+            t = task(share="full")
+            self.assertEqual(t["share"], "full")
+            reg = {"tasks": [t]}
+            tasks.merge(reg, {"updates": [{"id": t["id"], "next": "x"}]}, DAY, NOW)
+            self.assertEqual(t["share"], "full")  # an update that doesn't say keeps it
+            tasks.merge(reg, {"updates": [{"id": t["id"], "share": "nonsense"}]}, DAY, NOW)
+            self.assertEqual(t["share"], "none")
+            self.assertEqual(tasks.meetings([{"start": "09:00", "end": "09:30", "title": "Sync", "share": "full"}])[0]["share"], "full")
+        self.assertNotIn("share", task(share="full"))  # Docket alone keeps none
+
+    def test_more_rules_and_a_callback_after_each_refresh(self):
+        tasks.save({"tasks": []})
+        seen = []
+        with mock.patch.object(app, "_ask", return_value={"new": [{"title": "Reply to Alex"}]}) as ask, \
+             mock.patch.object(app.sessions, "recent", return_value=[]), \
+             mock.patch.object(app, "RULES", "Also mark what {who} may share."), \
+             mock.patch.object(app, "AFTER_REFRESH", [seen.append]), \
+             mock.patch.object(store, "settings", return_value={"who": "Sam"}):
+            app.refresh()
+        self.assertTrue(ask.call_args[0][0].endswith("Also mark what Sam may share."))
+        self.assertEqual([t["title"] for t in seen[0]["tasks"]], ["Reply to Alex"])
+
+    def test_its_own_page_and_routes(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False) as f:
+            f.write("<p>mine</p>")
+        try:
+            with mock.patch.object(app, "_read_prs"):
+                server, _ = app.serve(0, index=f.name, routes={"/hub": lambda: {"url": "http://hub"}})
+            url = f"http://127.0.0.1:{server.server_port}"
+            with urllib.request.urlopen(url + "/") as r:
+                self.assertEqual(r.read(), b"<p>mine</p>")
+            with urllib.request.urlopen(url + "/hub") as r:
+                self.assertEqual(json.loads(r.read()), {"url": "http://hub"})
+            server.shutdown()
+        finally:
+            os.unlink(f.name)

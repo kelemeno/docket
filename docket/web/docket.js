@@ -10,6 +10,7 @@
 //                         it was, for undo)
 //     add(text, kind): data
 //     minutes: true                       snooze also offers 30 minutes and an hour (task.until)
+//     assistant: "Claude"                 what the reply box and notes call the one answering
 //     reply(task, text): data             optional: a note to Claude about the task; task.notes [{at, by
 //                         you|claude, text}] show on the card, task.asked while the answer is coming
 //     actions: ["done", "snooze", "waiting", "drop", "open", "star"]   the buttons this source has
@@ -25,6 +26,7 @@
   const NAMES = { done: "Done", snooze: "Snooze", waiting: "Waiting", drop: "Drop", open: "Open", star: "★ Today" };
 
   window.docket = function (el, src) {
+    const ai = src.assistant || "Claude";
     el.innerHTML = `
       <main>
         <section class="card now" data-part="now"></section>
@@ -73,8 +75,8 @@
       return `<div class="chips">${c.join("")}</div>`;
     }
     function notes(t) {
-      const list = (t.notes || []).slice(-4).map((n) => `<div class="note ${n.by === "you" ? "you" : "claude"}"><span class="by">${n.by === "you" ? "You" : "Claude"}</span> ${esc(n.text)}</div>`);
-      if (t.asked) list.push(`<div class="note claude waiting"><span class="by">Claude</span> is looking into it…</div>`);
+      const list = (t.notes || []).slice(-4).map((n) => `<div class="note ${n.by === "you" ? "you" : "claude"}"><span class="by">${n.by === "you" ? "You" : esc(ai)}</span> ${esc(n.text)}</div>`);
+      if (t.asked) list.push(`<div class="note claude waiting"><span class="by">${esc(ai)}</span> is looking into it…</div>`);
       return list.length ? `<div class="notes">${list.join("")}</div>` : "";
     }
     function renderNow(g) {
@@ -93,8 +95,8 @@
         ${chips(t)}
         ${(t.sources || []).length ? `<div class="links">${t.sources.map(link).join("")}</div>` : ""}
         ${ses ? `<div class="chips">${ses}</div>` : ""}
-        ${src.reply ? notes(t) + `<form class="reply"><input data-id="${esc(t.id)}" autocomplete="off" aria-label="Reply to Claude about this task"
-          placeholder="Reply to Claude: what's changed, who to ask, where…  (c)"><button>Send</button></form>` : ""}
+        ${src.reply ? notes(t) + `<form class="reply"><input data-id="${esc(t.id)}" autocomplete="off" aria-label="Reply to ${esc(ai)} about this task"
+          placeholder="Reply to ${esc(ai)}: what's changed, who to ask, where…  (c)"><button>Send</button></form>` : ""}
         <div class="actions">${src.actions.map(btn).join("")}
           <div class="snooze hidden" data-part="snooze">
             ${src.minutes ? `<button data-snooze="m30">30 min</button><button data-snooze="m60">1 hour</button>` : ""}<button data-snooze="1">Tomorrow</button><button data-snooze="mon">Monday</button><button data-snooze="7">Next week</button>
@@ -111,7 +113,7 @@
         const sub = [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
                      t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "",
                      opts.closed ? (t.status === "dropped" ? "dropped" : t.closed_by === "claude" ? "done: " + esc(t.evidence) : "done") : ""]
-          .filter(Boolean).join(" · ") + (t.asked ? ` · <span class="meta">Claude is reading your note…</span>` : "");
+          .filter(Boolean).join(" · ") + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
         return `<div class="row${t.id === sel ? " sel" : ""}${opts.closed ? " closed" : ""}" data-id="${esc(t.id)}">${pri(t)}

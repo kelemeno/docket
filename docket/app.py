@@ -119,6 +119,12 @@ same shape as the task above. "waiting" only when there's nothing for {who} to d
 else acts; a ping, a nudge or a question to ask is still {who}'s step, so the task stays open."""
 
 
+# For an app that carries Docket inside it: more rules for the hourly refresh (appended to its prompt),
+# and what to do with the list after each refresh.
+RULES = ""
+AFTER_REFRESH = []
+
+
 def _env():
     return dict(os.environ, PATH=":".join([os.environ.get("PATH", ""), "/opt/homebrew/bin", "/usr/local/bin",
                                            os.path.expanduser("~/.local/bin")]))
@@ -207,7 +213,8 @@ def refresh():
         titles = []
     closed = "\n".join(f"{t['status']} · {t['title']}" for t in reg["tasks"] if t["status"] in tasks.CLOSED) or "(none)"
     out = _ask(REFRESH.format(who=_who(), now=started.strftime("%A %Y-%m-%d %H:%M"),
-                              since=since, tasks=lines, closed=closed, sessions="\n".join(titles) or "(none)"))
+                              since=since, tasks=lines, closed=closed, sessions="\n".join(titles) or "(none)")
+               + (f"\n\n{RULES.format(who=_who())}" if RULES else ""))
     with tasks.LOCK:  # read again: you may have changed something while Claude was reading
         reg = tasks.load()
         tasks.roll(reg, today)
@@ -215,6 +222,8 @@ def refresh():
         reg["since"] = (started - dt.timedelta(minutes=10)).isoformat(timespec="minutes")  # a little overlap
         reg["refreshed"] = store.now()
         tasks.save(reg)
+    for callback in AFTER_REFRESH:
+        callback(reg)
     return reg
 
 
@@ -383,12 +392,16 @@ class Page:
                 "error": self.error, "folder": str(store.HOME), "prs": prs()}
 
 
-def serve(port=PORT):
-    """The page at http://127.0.0.1:<port>. Returns (server, page); the server runs in a thread."""
+def serve(port=PORT, index=None, routes=None):
+    """The page at http://127.0.0.1:<port>. Returns (server, page); the server runs in a thread. An app
+    that carries Docket can serve its own page instead (`index`, a path) and add GET routes of its own
+    (`routes`: {"/path": function returning something JSON can carry})."""
     page = Page()
     prs()  # starts reading them, so they're there when the page first opens
-    files = {"/": ("index.html", "text/html"), "/docket.js": ("docket.js", "text/javascript"),
-             "/esc.js": ("esc.js", "text/javascript"), "/docket.css": ("docket.css", "text/css")}
+    files = {"/": (Path(index) if index else WEB / "index.html", "text/html"),
+             **{f"/{name}": (WEB / name, kind) for name, kind in (("docket.js", "text/javascript"), ("page.js", "text/javascript"),
+                                                                ("esc.js", "text/javascript"), ("docket.css", "text/css"))}}
+    routes = routes or {}
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -404,8 +417,10 @@ def serve(port=PORT):
                 return self._send(403, b'{"error": "local only"}')
             url = urlparse(self.path)
             if self.command == "GET" and url.path in files:
-                name, kind = files[url.path]
-                return self._send(200, (WEB / name).read_bytes(), f"{kind}; charset=utf-8")
+                file, kind = files[url.path]
+                return self._send(200, file.read_bytes(), f"{kind}; charset=utf-8")
+            if self.command == "GET" and url.path in routes:
+                return self._send(200, json.dumps(routes[url.path]()).encode())
             if self.command == "GET" and url.path == "/state":
                 return self._send(200, json.dumps(page.state()).encode())
             if self.command == "POST" and url.path in ("/refresh", "/task", "/reply"):
