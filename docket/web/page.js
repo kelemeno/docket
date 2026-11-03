@@ -1,5 +1,5 @@
-// The work page: Docket's task list in the cockpit, with today's meetings, your agent (aag.py), your
-// pull requests and your Claude Code sessions on the side. index.html is the whole page; an app that
+// The work page: Docket's task list in two views, Triage and Work (Linear, linear.py), with today's
+// meetings, your agent (aag.py), your pull requests and your Claude Code sessions on the side. index.html is the whole page; an app that
 // carries Docket can put it inside its own:
 //
 //   const work = docketPage(element, { status: element for "Updated 11:20", run: the Refresh button,
@@ -110,44 +110,106 @@ window.docketPage = function (el, opts = {}) {
     return head + (body || `<p class="empty">Nothing for your agent this week.</p>`)
       + `<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
   }
-  const work = docket(el, {
-    assistant: opts.assistant,
-    actions: ["done", "snooze", "waiting", "drop", "open"],
-    minutes: true,
-    load: async () => (await fetch("/state")).json(),
-    async act(t, action, value) {
-      if (action !== "restore") return post("/task", { id: t.id, action, value });
-      // undo: back to the status and day it had before
-      const today = work.data.today;
-      if (value.status === "waiting") return post("/task", { id: t.id, action: "waiting" });
-      const reopened = await post("/task", { id: t.id, action: "reopen" });
-      const now = reopened.tasks.find((x) => x.id === t.id);
-      const later = value.until && value.until > new Date().toLocaleString("sv").slice(0, 16).replace(" ", "T");  // a snooze that hasn't run out
-      const back = later ? value.until : value.do < today ? today : value.do;
-      return now && back && (back !== now.do || value.until) ? post("/task", { id: t.id, action: "snooze", value: back }) : reopened;
-    },
-    add: (text, kind) => post("/task", { action: "add", value: text, kind }),
-    reply: (t, text) => post("/reply", { id: t.id, text }),
-    refresh: () => opts.run && opts.run.click(),
-    empty: (d) => d.refreshed ? `<p class="title">Nothing due today.</p><p class="meta">Everything open is waiting on others or planned for later.</p>`
+  // Two views of one list. Work: real work, one task per Linear issue (linear.py) in Linear's order,
+  // and the deep work that isn't on Linear yet. Triage: the rest, the quick back-and-forth. Your agent's
+  // task for an issue shows with the issue. The tab is remembered in this browser.
+  const work = (t) => !!(t.linear || (t.issue && !t.aag) || (t.kind === "deep" && !t.issue));
+  const triage = (t) => !work(t) && !(t.aag && t.issue);
+  const issueOf = (d, t) => t.linear ? t : (d.tasks || []).find((x) => x.linear && x.linear.key === t.issue);
+  const level = (d, t) => { const i = issueOf(d, t); return i ? [i.linear.level, i.linear.sort] : [9, 0]; };
+  const ROLE = { assignee: "assigned to you", reviewer: "your review" };
+  function moreWork(t, d, where) {
+    const i = t.linear, agents = i ? (d.tasks || []).filter((x) => x.aag && x.issue === i.key && x.status !== "done" && x.status !== "dropped") : [];
+    if (where === "row") return i ? "" : t.issue ? esc(t.issue) : `<span style="color:var(--warn)">not on Linear</span>`;
+    if (i) return `<div class="chips"><span class="chip">${esc(i.key)}</span><span class="chip">${ROLE[i.role] || ""}</span><span class="chip">${esc(i.state)}</span></div>`
+      + agents.map((x) => `<p class="why">Your agent: ${esc(x.next)}${(x.sources || [])[0] && x.sources[0].link ? ` · <a href="${esc(x.sources[0].link)}" target="_blank" rel="noopener">${esc(x.sources[0].label)} ↗</a>` : ""}</p>`).join("");
+    if (t.issue) return "";
+    const url = "https://linear.new?title=" + encodeURIComponent(t.title) + "&description=" + encodeURIComponent([t.next, t.why, ...(t.sources || []).map((s) => s.link)].filter(Boolean).join("\n\n"));
+    return `<p class="why" style="color:var(--warn)">Not on Linear: real work belongs to an issue. <a href="${esc(url)}" target="_blank" rel="noopener">Create it in Linear ↗</a>, or name its key (EVM-123) in a note, or ask for the review with a comment <code>review: @you</code> on its issue.</p>`;
+  }
+  function linearLine(d) {
+    const l = d.linear;
+    if (!l) return "";
+    if (!l.key) return `<p class="meta">Work comes from Linear: put a personal API key in ${esc(d.folder)}/settings.json as <code>"linear_key"</code> (Linear: Settings → Security &amp; access).</p>`;
+    return `<p class="meta">${l.error ? `<span class="err">Linear unreachable since ${esc(String(l.since || "").slice(11, 16))}: ${esc(l.error)}</span>` : l.at ? `Linear read ${esc(l.at.slice(11, 16))} · ${l.count} issue${l.count === 1 ? "" : "s"} and reviews` : "Reading Linear…"}</p>`;
+  }
+  let view = "triage"; try { view = localStorage.getItem("docket-view") || "triage"; } catch {}
+  el.innerHTML = `<div class="views"><div class="seg viewtabs"><button data-view="triage">Triage <span class="count" data-vn="triage"></span></button><button data-view="work">Work <span class="count" data-vn="work"></span></button></div><span data-part="linear"></span></div>
+    <div data-view-el="triage"></div><div data-view-el="work"></div>`;
+  const box = (v) => el.querySelector(`[data-view-el="${v}"]`);
+  let loading = null;  // the two views load the same state: one fetch for both
+  const load = () => loading || (loading = fetch("/state").then((r) => r.json()).finally(() => setTimeout(() => { loading = null; }, 300)));
+  const views = {};
+  const both = async (v, p) => { const out = await p; for (const k in views) if (k !== v) views[k].reload(); return out; };
+  function base(v) {
+    return {
+      assistant: opts.assistant,
+      actions: ["done", "snooze", "waiting", "drop", "open"],
+      minutes: true,
+      load,
+      act: (t, action, value) => both(v, act(t, action, value)),
+      reply: (t, text) => both(v, post("/reply", { id: t.id, text })),
+      refresh: () => opts.run && opts.run.click(),
+      side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? `<section class="card"><h2>Your agent <span class="count">${((d.aag.feed || {}).tasks || []).filter((t) => t.column === "needs_you").length || ""}</span></h2>${agent(d)}</section>` : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section><section class="card"><h2>Claude sessions</h2>${sessions(d)}</section>`,
+      sideClick(e, d) {
+        const b = e.target.closest("button[data-prtab]"); if (!b) return;
+        prTab = b.dataset.prtab; try { localStorage.setItem("docket-pr-tab", prTab); } catch {}
+        return d;
+      },
+      foot: opts.foot || ((d) => `Kept on this computer in ${d.folder}.`),
+      rendered,
+    };
+  }
+  async function act(t, action, value) {
+    if (action !== "restore") return post("/task", { id: t.id, action, value });
+    // undo: back to the status and day it had before
+    const today = views.triage.data.today;
+    if (value.status === "waiting") return post("/task", { id: t.id, action: "waiting" });
+    const reopened = await post("/task", { id: t.id, action: "reopen" });
+    const now = reopened.tasks.find((x) => x.id === t.id);
+    const later = value.until && value.until > new Date().toLocaleString("sv").slice(0, 16).replace(" ", "T");  // a snooze that hasn't run out
+    const back = later ? value.until : value.do < today ? today : value.do;
+    return now && back && (back !== now.do || value.until) ? post("/task", { id: t.id, action: "snooze", value: back }) : reopened;
+  }
+  const due = (d, t) => t.status === "open" && (t.do || d.today) <= d.today && !(t.until && t.until > new Date().toLocaleString("sv").slice(0, 16).replace(" ", "T"));
+  function rendered(d) {
+    if (opts.run) { opts.run.disabled = !!d.running; opts.run.textContent = d.running ? "Reading…" : "Refresh"; }
+    if (opts.status) opts.status.innerHTML = d.error ? `<span class="err">Last refresh failed: ${esc(d.error)}</span>`
+      : d.running ? "Reading your accounts…" : d.refreshed ? `Updated ${esc(d.refreshed.slice(11, 16))}` : "Not refreshed yet";
+    for (const [v, f] of [["triage", triage], ["work", work]]) el.querySelector(`[data-vn="${v}"]`).textContent = (d.tasks || []).filter((t) => f(t) && due(d, t)).length || "";
+    const line = el.querySelector('[data-part="linear"]'), html = view === "work" ? linearLine(d) : "";
+    if (line.innerHTML !== html) line.innerHTML = html;
+    clearTimeout(window.poll);
+    if (d.running || d.tasks.some((t) => t.asked) || (d.prs || {}).loading) window.poll = setTimeout(reloadAll, 5000);  // a refresh or an answer coming
+  }
+  views.triage = docket(box("triage"), {
+    ...base("triage"), show: triage,
+    add: (text, kind) => both("triage", post("/task", { action: "add", value: text, kind })),
+    empty: (d) => d.refreshed ? `<p class="title">Nothing due today.</p><p class="meta">Everything open is waiting on others or planned for later. Real work is under Work.</p>`
       : `<p class="title">No tasks yet.</p><p class="meta">The first refresh reads the last 3 days of whatever your Claude Code is connected to: Slack, email, calendar, GitHub, Linear, Notion. It takes a few minutes.</p>`,
-    side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? `<section class="card"><h2>Your agent <span class="count">${((d.aag.feed || {}).tasks || []).filter((t) => t.column === "needs_you").length || ""}</span></h2>${agent(d)}</section>` : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section><section class="card"><h2>Claude sessions</h2>${sessions(d)}</section>`,
-    sideClick(e, d) {
-      const b = e.target.closest("button[data-prtab]"); if (!b) return;
-      prTab = b.dataset.prtab; try { localStorage.setItem("docket-pr-tab", prTab); } catch {}
-      return d;
-    },
-    foot: opts.foot || ((d) => `Kept on this computer in ${d.folder}.`),
-    rendered(d) {
-      if (opts.run) { opts.run.disabled = !!d.running; opts.run.textContent = d.running ? "Reading…" : "Refresh"; }
-      if (opts.status) opts.status.innerHTML = d.error ? `<span class="err">Last refresh failed: ${esc(d.error)}</span>`
-        : d.running ? "Reading your accounts…" : d.refreshed ? `Updated ${esc(d.refreshed.slice(11, 16))}` : "Not refreshed yet";
-      clearTimeout(window.poll);
-      if (d.running || d.tasks.some((t) => t.asked) || (d.prs || {}).loading) window.poll = setTimeout(work.reload, 5000);  // a refresh or an answer coming
-    },
   });
-  if (opts.run) opts.run.onclick = async () => { await post("/refresh"); work.reload(); };
-  work.reload();
-  setInterval(() => { if (document.visibilityState === "visible" && !work.data?.running) work.reload(); }, 60 * 1000);
-  return work;
+  views.work = docket(box("work"), {
+    ...base("work"), show: work,
+    lists: [{ key: "issues", title: "Linear issues", empty: "Nothing on Linear needs you now.", pick: (l) => l.filter((t) => t.linear || t.issue) },
+            { key: "loose", title: "Not on Linear", empty: "All the work here belongs to an issue.", pick: (l) => l.filter((t) => !t.linear && !t.issue) }],
+    rank: (a, b, d) => { const x = level(d, a), y = level(d, b); return x[0] - y[0] || x[1] - y[1]; },
+    more: moreWork,
+    empty: (d) => `<p class="title">Nothing to work on.</p><p class="meta">Your Linear issues and reviews are waiting on others or planned for later.</p>${linearLine(d)}`,
+  });
+  function show(v) {
+    view = v; try { localStorage.setItem("docket-view", v); } catch {}
+    for (const k of ["triage", "work"]) { box(k).hidden = k !== v; el.querySelector(`[data-view="${k}"]`).classList.toggle("on", k === v); }
+    views[v].render();
+  }
+  el.querySelector(".viewtabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-view]"); if (b) show(b.dataset.view); });
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || !el.offsetParent) return;
+    if (e.key === "1" || e.key === "2") { show(e.key === "1" ? "triage" : "work"); e.preventDefault(); }
+  });
+  const reloadAll = () => { views.triage.reload(); views.work.reload(); };
+  if (opts.run) opts.run.onclick = async () => { await post("/refresh"); reloadAll(); };
+  show(view);
+  reloadAll();
+  setInterval(() => { if (document.visibilityState === "visible" && !views.triage.data?.running) reloadAll(); }, 60 * 1000);
+  return views[view];
 };

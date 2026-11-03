@@ -23,8 +23,11 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   refresh reads your notes too.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
   **Waiting** (on someone else), **Drop**, **Open** the source, **Undo**.
-- **Quick** (under 10 minutes) and **Deep work** for today, P0 first. **Waiting**, **Later** and
-  **Handled today** are folded below. Add your own tasks too.
+- **Two tabs** (`1`, `2`). **Triage** is the back-and-forth: **Quick** (under 10 minutes) and **Deep
+  work** for today, P0 first. **Work** is real work, one task per Linear issue, in Linear's order, and
+  the deep work that isn't on Linear yet ([below](#work-linear)). In both, **Waiting**, **Later** and
+  **Handled today** are folded below, and Now is the top task that isn't waiting on anyone. Add your
+  own tasks in Triage.
 - **On the side:**
   - Today's meetings, with a now line and free gaps.
   - Your **pull requests** (read with `gh`), in two tabs. **Mine** groups them as ready to merge, needs
@@ -70,6 +73,8 @@ The folder is `$DOCKET_HOME`, or `~/.local/share/docket` by default. In it, `set
 | `model` | the Claude model for refreshes and replies (default `sonnet`) |
 | `agent_paths` | folders where your background agents run: their sessions are only counted, not listed |
 | `aag` | your agent's feed ([below](#your-agent-aag)): unset for the aag on this computer, `"ssh HOST"` where aag runs on a server, or `"off"` |
+| `linear_key` | a Linear personal API key for the Work tab ([below](#work-linear)); or `$LINEAR_API_KEY` |
+| `reviews_days` | how far back `review:` comments on Linear count (default 30) |
 
 The page's port is `$DOCKET_PORT` (default 8766).
 
@@ -102,6 +107,34 @@ these tasks from the threads, and the feed takes them back when it returns. Your
 kind on one stay yours. Your done or drop stays until its next move changes. With the local aag, its
 workdir joins `agent_paths`, so its agents' sessions are only counted.
 
+### Work (Linear)
+
+Real work lives in Linear: every deep task belongs to a Linear issue. With `linear_key` in
+`settings.json` (Linear: Settings → Security & access → Personal API keys), Docket reads Linear every 5
+minutes on its own, without Claude, and the **Work** tab lists:
+
+- **The issues assigned to you** that aren't done or cancelled.
+- **The reviews you're asked for**, in a comment on someone's issue: a line `review: @you`, with a
+  priority if it needs one (`review: @kl high, @valera`). Priorities are urgent, high, medium (the
+  default) and low, or P0–P3. A later `review: @you done` (or `drop`) takes it off, and the latest
+  such line about you on an issue counts. `@you` is your Linear display name, first name, name or
+  email's name, typed or as Linear's mention.
+
+They come in Linear's order: priority, then the manual order you give them in Linear. Linear's urgent
+and high are P0 and P1 here, until you change the priority yourself.
+
+Whose move it is comes from the issue's PRs (Linear's GitHub links) as `gh` reads them, and from your
+agent. A PR that needs you (CI failing, conflicts, changes requested, ready to merge, a review
+requested, new commits since your review) puts the issue on the list. One that waits on CI, the author
+or other reviewers moves it to Waiting until that changes. A review whose PRs are all merged or closed
+is done, and an issue that's done, cancelled or not yours any more on Linear is handled.
+
+The rest of the list is coupled to its issue: a task that names the key (`EVM-123`), links to the issue
+or to one of its PRs. A task the refresh made about it (a Slack thread about the PR, say) is folded
+into the issue's task, with its why and links. Your agent's task for one of its PRs shows on the
+issue's card and decides its move. Deep work that belongs to no issue shows under **Not on Linear**,
+with a link that opens a new Linear issue filled in from the task. Docket itself never writes to Linear.
+
 ## Safety
 
 - **Claude only reads.**
@@ -111,8 +144,9 @@ workdir joins `agent_paths`, so its agents' sessions are only counted.
   - Everything Claude reads is treated as data, never as instructions. Check the list `setup` prints.
 - **Only your browser.** The page listens on 127.0.0.1 only and refuses other host names (DNS
   rebinding). It sends no CORS headers, and changes need a header a web form can't set.
-- **Your data stays local.** The task list is in a 0700 folder, 0600 file. Nothing leaves your
-  computer except what Claude Code sends to Anthropic and the calls to the services it reads.
+- **Your data stays local.** The task list is in a 0700 folder, 0600 file, and so is your Linear key.
+  Nothing leaves your computer except what Claude Code sends to Anthropic, the calls to the services
+  it reads, and Docket's read-only queries to Linear's API with your key.
 
 ## Using the page on another task list
 
@@ -130,8 +164,10 @@ docket(document.getElementById("view"), {
 });
 ```
 
-`docket.js` has the full interface at the top. `docket/web/page.js` is the work page built on it
-(`docketPage(element, {status, run, assistant})`), and `docket/web/index.html` is the page around it.
+`docket.js` has the full interface at the top, including `show`, `lists`, `rank` and `more` for a page
+with several views of one list. `docket/web/page.js` is the work page built on it, with its Triage and
+Work views (`docketPage(element, {status, run, assistant})`), and `docket/web/index.html` is the page
+around it.
 
 ## Carrying Docket inside another app
 
@@ -143,10 +179,14 @@ subpackage (`yourapp/docket/`) and change it through these hooks instead of edit
 | `store.configure(home=…, settings=…)` | where `tasks.json` lives, and which settings file to read |
 | `tasks.extra = fn(item, current) → dict` | fields of your own kept on tasks and meetings (e.g. what may be shared elsewhere) |
 | `app.RULES = "…"` | more rules appended to the refresh prompt (`{who}` is filled in) |
+| `app.RULES_FROM.append(fn() → "…")` | more rules, asked for at each refresh, beside `RULES` |
 | `app.AFTER_REFRESH.append(fn(reg))` | something to do with the list after each refresh |
 | `app.STATE = fn() → dict` | more fields in what the page loads |
 | `app.serve(port, index=…, routes={…})` | your own page around `page.js`, and GET routes of your own |
 | `docketPage(el, {assistant: "…", foot: fn(data)})` | what the reply box calls the one answering, and the line under the side panel |
+
+`docket run` starts the feeds with `aag.start()` and `linear.start()`. An app that serves Docket itself
+calls them too, after setting its own hooks: they add theirs to the ones already set.
 
 ## Tests
 

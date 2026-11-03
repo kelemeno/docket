@@ -120,8 +120,10 @@ else acts; a ping, a nudge or a question to ask is still {who}'s step, so the ta
 
 
 # For an app that carries Docket inside it: more rules for the refresh (appended to its prompt),
-# and what to do with the list after each refresh.
+# and what to do with the list after each refresh. RULES_FROM: functions returning more rules, asked at
+# each refresh, for parts that add their own without taking over RULES.
 RULES = ""
+RULES_FROM = []
 AFTER_REFRESH = []
 STATE = dict  # more for the page's state: a function returning a dict
 
@@ -213,9 +215,10 @@ def refresh():
         print(f"refresh: couldn't list sessions: {e!r}", file=sys.stderr)
         titles = []
     closed = "\n".join(f"{t['status']} · {t['title']}" for t in reg["tasks"] if t["status"] in tasks.CLOSED) or "(none)"
+    rules = "\n\n".join(x for x in (RULES, *(f() for f in RULES_FROM)) if x)
     out = _ask(REFRESH.format(who=_who(), now=started.strftime("%A %Y-%m-%d %H:%M"),
                               since=since, tasks=lines, closed=closed, sessions="\n".join(titles) or "(none)")
-               + (f"\n\n{RULES.format(who=_who())}" if RULES else ""))
+               + (f"\n\n{rules.format(who=_who())}" if rules else ""))
     with tasks.LOCK:  # read again: you may have changed something while Claude was reading
         reg = tasks.load()
         tasks.roll(reg, today)

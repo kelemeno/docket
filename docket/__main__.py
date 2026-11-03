@@ -7,7 +7,7 @@ import argparse
 import sys
 import webbrowser
 
-from . import aag, app, store, tasks
+from . import aag, app, linear, store, tasks
 
 
 def main(argv=None):
@@ -23,6 +23,7 @@ def main(argv=None):
     elif a.command == "run":
         try:
             aag.start()
+            linear.start()
             app.run()
         except KeyboardInterrupt:
             pass

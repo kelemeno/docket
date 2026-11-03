@@ -16,7 +16,12 @@
 //     actions: ["done", "snooze", "waiting", "drop", "open", "star"]   the buttons this source has
 //     side(data): html    the side panel;  sideClick(event, data): data or undefined
 //     empty(data): html   Now when there's nothing to do;  foot(data): text under the side panel
-//   })  →  {reload(), render()}
+//     show(task, data): bool          optional: the tasks this view has (a page with several views)
+//     lists: [{key, title, empty, pick(open tasks): tasks}]   optional: the lists below Now, instead of
+//                         Quick and Deep work (Waiting, Later and Handled stay)
+//     rank(a, b, data): number        optional: comes before the usual order (★, priority, slips, age)
+//     more(task, data, where): html   optional: more on a task, where "now" (its card) or "row"
+//   })  →  {reload(), render(), data}
 (() => {
   const PRI = ["P0", "P1", "P2"];
   const day = (d) => new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -27,15 +32,18 @@
 
   window.docket = function (el, src) {
     const ai = src.assistant || "Claude";
+    const LISTS = src.lists || [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => t.kind === "quick") },
+                                { key: "deep", title: "Deep work", empty: "No deep work for today.", pick: (l) => l.filter((t) => t.kind !== "quick") }];
+    const show = (t) => !src.show || src.show(t, data);
+    const more = (t, where) => src.more ? src.more(t, data, where) || "" : "";
     el.innerHTML = `
       <main>
         <section class="card now" data-part="now"></section>
-        <form class="card add" data-part="add">
+        ${src.add ? `<form class="card add" data-part="add">
           <input placeholder="Add a task and press Enter  (n)" autocomplete="off" aria-label="New task">
           <select aria-label="Kind"><option value="quick">Quick</option><option value="deep">Deep work</option></select>
-        </form>
-        <section class="card"><h2>Quick · under 10 min <span class="count" data-n="quick"></span></h2><div data-list="quick"></div></section>
-        <section class="card"><h2>Deep work <span class="count" data-n="deep"></span></h2><div data-list="deep"></div></section>
+        </form>` : ""}
+        ${LISTS.map((l) => `<section class="card"><h2>${esc(l.title)} <span class="count" data-n="${esc(l.key)}"></span></h2><div data-list="${esc(l.key)}"></div></section>`).join("")}
         ${src.actions.includes("waiting") ? `<details class="card"><summary>Waiting on others <span class="count" data-n="waiting"></span></summary><div data-list="waiting"></div></details>` : ""}
         <details class="card"><summary>Later <span class="count" data-n="later"></span></summary><div data-list="later"></div></details>
         <details class="card"><summary>Handled today <span class="count" data-n="handled"></span></summary><div data-list="handled"></div></details>
@@ -49,13 +57,13 @@
     const stamp = (d) => d.toLocaleString("sv").slice(0, 16).replace(" ", "T");  // local YYYY-MM-DDTHH:MM
     const due = (t) => (t.do || data.today) <= data.today && !(t.until && t.until > stamp(new Date()));
     const when = (t) => t.until && t.until.startsWith(data.today) ? "until " + t.until.slice(11) : day(t.do);
-    const rank = (a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0) || (PRI.indexOf(a.priority) + 4) % 4 - (PRI.indexOf(b.priority) + 4) % 4
+    const rank = (a, b) => (src.rank ? src.rank(a, b, data) : 0) || (b.star ? 1 : 0) - (a.star ? 1 : 0) || (PRI.indexOf(a.priority) + 4) % 4 - (PRI.indexOf(b.priority) + 4) % 4
       || (b.rolled || 0) - (a.rolled || 0) || String(a.created).localeCompare(String(b.created));
     function groups() {
-      const tasks = data.tasks || [];
+      const tasks = (data.tasks || []).filter(show);
       const open = tasks.filter((t) => t.status === "open" && due(t)).sort(rank);
       return {
-        open, quick: open.filter((t) => t.kind === "quick"), deep: open.filter((t) => t.kind !== "quick"),
+        open, lists: Object.fromEntries(LISTS.map((l) => [l.key, l.pick(open)])),
         waiting: tasks.filter((t) => t.status === "waiting").sort(rank),
         later: tasks.filter((t) => t.status === "open" && !due(t)).sort((a, b) => (a.until || a.do).localeCompare(b.until || b.do) || rank(a, b)),
         handled: tasks.filter((t) => (t.status === "done" || t.status === "dropped") && String(t.done_at || "").startsWith(data.today)),
@@ -89,7 +97,7 @@
       return true;
     }
     function renderNow(g) {
-      const t = data.tasks.find((x) => x.id === sel && (x.status === "open" || x.status === "waiting")) || g.open[0];
+      const t = data.tasks.find((x) => x.id === sel && (x.status === "open" || x.status === "waiting") && show(x)) || g.open[0];
       // a reload mustn't eat a reply you're typing
       const box = part("now").querySelector(".reply input"), draft = box && box.dataset.id === (t && t.id) ? box.value : "",
             typing = box && document.activeElement === box;
@@ -101,7 +109,7 @@
       if (!put(part("now"), `<h2>Now</h2>
         <p class="title">${esc(t.title)}</p>
         ${t.next ? `<p class="next">→ ${esc(t.next)}</p>` : ""}${t.why ? `<p class="why">${esc(t.why)}</p>` : ""}
-        ${chips(t)}
+        ${chips(t)}${more(t, "now")}
         ${(t.sources || []).length ? `<div class="links">${t.sources.map(link).join("")}</div>` : ""}
         ${ses ? `<div class="chips">${ses}</div>` : ""}
         ${src.reply ? notes(t) + `<form class="reply"><input data-id="${esc(t.id)}" autocomplete="off" aria-label="Reply to ${esc(ai)} about this task"
@@ -121,7 +129,7 @@
         const s0 = (t.sources || [])[0];
         const sub = [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
                      t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "",
-                     opts.closed ? (t.status === "dropped" ? "dropped" : t.closed_by === "claude" ? "done: " + esc(t.evidence) : "done") : ""]
+                     opts.closed ? (t.status === "dropped" ? "dropped" : t.closed_by === "claude" ? "done: " + esc(t.evidence) : "done") : "", more(t, "row")]
           .filter(Boolean).join(" · ") + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
@@ -138,7 +146,7 @@
         const box = el.querySelector(`[data-list="${k}"]`); if (!box) return;
         put(box, rows(list, opts)); el.querySelector(`[data-n="${k}"]`).textContent = list.length || "";
       };
-      fill("quick", g.quick, { empty: "No quick items today." }); fill("deep", g.deep, { empty: "No deep work for today." });
+      for (const l of LISTS) fill(l.key, g.lists[l.key], { empty: l.empty });
       fill("waiting", g.waiting); fill("later", g.later, { later: true }); fill("handled", g.handled, { closed: true, empty: "Nothing yet." });
       put(part("side"), src.side(data));
       part("foot").textContent = src.foot ? src.foot(data) : "";
@@ -199,21 +207,21 @@
       const out = await src.sideClick(e, data);
       if (out) { data = out; render(); }
     });
-    part("add").addEventListener("submit", async (e) => {
+    if (src.add) part("add").addEventListener("submit", async (e) => {
       e.preventDefault();
       const input = part("add").querySelector("input"), text = input.value.trim(); if (!text) return;
       try { data = await src.add(text, part("add").querySelector("select").value); } catch (err) { return toast(err.message || "That didn't work."); }
       input.value = ""; input.blur(); render();  // the keys work on the list again
     });
-    part("add").addEventListener("keydown", (e) => { if (e.key === "Escape") e.target.blur(); });
+    if (src.add) part("add").addEventListener("keydown", (e) => { if (e.key === "Escape") e.target.blur(); });
     document.addEventListener("keydown", (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || !data || !el.offsetParent) return;
-      const g = groups(), list = [...g.quick, ...g.deep], i = list.findIndex((t) => t.id === sel), k = e.key;
+      const g = groups(), list = LISTS.flatMap((l) => g.lists[l.key]), i = list.findIndex((t) => t.id === sel), k = e.key;
       const action = Object.keys(KEYS).find((a) => KEYS[a] === k && src.actions.includes(a));
       if (k === "j" || k === "k") { const n = list[Math.max(0, Math.min(list.length - 1, i + (k === "j" ? 1 : -1)))]; if (n) { sel = n.id; render(); } }
       else if (action) nowAction(action);
       else if (k === "u") undo();
-      else if (k === "n") part("add").querySelector("input").focus();
+      else if (k === "n" && src.add) part("add").querySelector("input").focus();
       else if (k === "c" && src.reply && part("now").querySelector(".reply input")) part("now").querySelector(".reply input").focus();
       else if (k === "r" && src.refresh) src.refresh();
       else if (k === "Escape") part("snooze")?.classList.add("hidden");
