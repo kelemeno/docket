@@ -106,6 +106,19 @@ class Notes(unittest.TestCase):
         with mock.patch.object(app, "_ask", return_value={}) as ask, mock.patch.object(app.sessions, "recent", return_value=[]):
             app.refresh()
         self.assertIn("you: ask Sam", ask.call_args[0][0])
+        self.assertFalse(ask.call_args.kwargs.get("act"))  # the refresh never acts
+
+    def test_a_note_is_acted_on_unless_settings_say_act_false(self):
+        class Now:  # the page answers in a thread; here at once
+            def __init__(self, target, daemon): self.target = target
+            def start(self): self.target()
+        for settings, act in (({}, True), ({"act": False}, False)):
+            with mock.patch.object(app, "_ask", return_value={"answer": "Sent."}) as ask, \
+                 mock.patch.object(app.threading, "Thread", Now), mock.patch.object(store, "settings", return_value=settings):
+                app.Page().reply(self.t["id"], "text Sam that it's merged")
+            self.assertEqual(ask.call_args.kwargs["act"], act)
+            self.assertEqual("as me: what the" in ask.call_args[0][0], act)
+            self.assertEqual("You can only read" in ask.call_args[0][0], not act)
 
 
 class Snooze(unittest.TestCase):
@@ -151,6 +164,31 @@ class Tools(unittest.TestCase):
         no = ["mcp__x__slack_send_message", "mcp__x__create_event", "mcp__x__search_and_replace", "mcp__x__list_and_delete",
               "mcp__x__mark_read", "mcp__x__whoami"]
         self.assertEqual([t for t in ok + no if app.reads_only(t)], ok)
+
+    def ran(self, act):
+        seen = {}
+
+        def run(cmd, **kw):
+            seen.update(allow=cmd[cmd.index("--allowedTools") + 1].split(","), deny=cmd[cmd.index("--disallowedTools") + 1].split(","))
+            return mock.Mock(stdout=json.dumps({"result": "{}"}), stderr="", returncode=0)
+        s = {"tools": ["mcp__x__slack_read_channel"], "refused": ["mcp__x__slack_send_message", "mcp__x__save_comment",
+                                                                   "mcp__x__notion-delete-pages", "mcp__x__share_file"]}
+        with mock.patch.object(store, "settings", return_value=s), mock.patch.object(app, "_which", return_value="/bin/x"), \
+             mock.patch("subprocess.run", run):
+            app._ask("hi", act=act)
+        return seen
+
+    def test_a_refresh_only_reads_and_a_note_may_send_but_never_delete_or_share(self):
+        read = self.ran(False)
+        self.assertNotIn("mcp__x__slack_send_message", read["allow"])
+        self.assertIn("mcp__x__slack_send_message", read["deny"])
+        self.assertNotIn("Bash(gh pr comment:*)", read["allow"])
+        note = self.ran(True)
+        for t in ("mcp__x__slack_send_message", "mcp__x__save_comment", "Bash(gh pr comment:*)", "mcp__x__slack_read_channel"):
+            self.assertIn(t, note["allow"])
+        for t in ("mcp__x__notion-delete-pages", "mcp__x__share_file", "Edit", "WebFetch"):
+            self.assertIn(t, note["deny"])
+            self.assertNotIn(t, note["allow"])
 
 
 class Prs(unittest.TestCase):

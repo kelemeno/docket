@@ -1,4 +1,4 @@
-"""docket setup [--name NAME]   pick Claude's read-only tools (and how the prompts call you)
+"""docket setup [--name NAME]   sort Claude's tools into read-only and the rest (and how the prompts call you)
 docket run                    the page at http://127.0.0.1:8766, and a refresh every 15 minutes 08:00-20:00
 docket refresh                read what's new now
 docket now                    the top of today's list
@@ -18,7 +18,9 @@ def main(argv=None):
     if a.command == "setup":
         allowed, refused = app.setup(a.name)
         print(f"Allowed (read-only): {len(allowed)}\n  " + "\n  ".join(allowed))
-        print(f"Refused: {len(refused)}\n  " + "\n  ".join(refused))
+        notes, never = [t for t in refused if app.acts(t)], [t for t in refused if not app.acts(t)]
+        print(f"Only for your notes (unless \"act\": false): {len(notes)}\n  " + "\n  ".join(notes))
+        print(f"Never: {len(never)}\n  " + "\n  ".join(never))
         print(f"Kept in {store.SETTINGS}. Check the allowed list; edit the file to change it.")
     elif a.command == "run":
         try:

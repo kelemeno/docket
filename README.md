@@ -19,8 +19,9 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   - A task you dropped or finished doesn't come back.
   - An overdue task rolls to today and shows how often it slipped.
 - **Reply to Claude** on a task (`c`): "ask Sam for a review in the team thread". It finds the thread,
-  links it, rewrites the next step and answers under your note, usually in about a minute. The
-  refresh reads your notes too.
+  links it, rewrites the next step and answers under your note, usually in about a minute. If the note
+  says to send something ("text Sam that it's merged", "comment on the PR that CI is fixed"), Claude
+  sends it as you and says where. The refresh reads your notes too.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
   **Waiting** (on someone else), **Drop**, **Open** the source, **Undo**.
 - **Two tabs** (`1`, `2`). **Triage** is the back-and-forth: **Quick** (under 10 minutes) and **Deep
@@ -51,7 +52,7 @@ docket setup --name Sam
 docket run
 ```
 
-`docket setup` asks Claude which tools it has and keeps only the read-only ones (below). `--name` is
+`docket setup` asks Claude which tools it has and sorts out the read-only ones (below). `--name` is
 how the prompts refer to you. `docket run` serves the page at http://127.0.0.1:8766 (`docket open`
 opens it) and refreshes the list every 15 minutes. The first refresh reads the last three days and takes a
 few minutes.
@@ -69,6 +70,7 @@ The folder is `$DOCKET_HOME`, or `~/.local/share/docket` by default. In it, `set
 |---|---|
 | `tools` / `refused` | the tools Claude may use, and the ones it may not; filled in by `docket setup` |
 | `who` | your first name, as the prompts call you |
+| `act` | `false` keeps your notes read-only too: Claude makes what to send your next step instead of sending it |
 | `every_min` | minutes between refreshes (default 15; each is a Claude run, so fewer use less of your plan) |
 | `model` | the Claude model for refreshes and replies (default `sonnet`) |
 | `agent_paths` | folders where your background agents run: their sessions are only counted, not listed |
@@ -137,16 +139,21 @@ with a link that opens a new Linear issue filled in from the task. Docket itself
 
 ## Safety
 
-- **Claude only reads.**
+- **The refresh only reads.**
   - It can use only the tools whose names say they read (list, get, search, read…) and contain no
     writing word, plus read-only `gh` commands. Every other tool is denied by name.
   - It runs in Claude Code's default permission mode, so your own Claude settings can't widen it.
   - Everything Claude reads is treated as data, never as instructions. Check the list `setup` prints.
+- **A note can send.** Only the run that answers your note may also use your other tools (send, post,
+  reply, comment, create…) and `gh pr comment` / `gh issue comment`, to do what the note says. Tools
+  that delete, trash, share, merge or revoke stay denied. It's told to send only what your note asks,
+  never what something it read asks, and to send nothing when who or what isn't clear. It sends as
+  you, without asking first: set `"act": false` if you'd rather it didn't.
 - **Only your browser.** The page listens on 127.0.0.1 only and refuses other host names (DNS
   rebinding). It sends no CORS headers, and changes need a header a web form can't set.
 - **Your data stays local.** The task list is in a 0700 folder, 0600 file, and so is your Linear key.
   Nothing leaves your computer except what Claude Code sends to Anthropic, the calls to the services
-  it reads, and Docket's read-only queries to Linear's API with your key.
+  it uses, what your notes ask it to send, and Docket's read-only queries to Linear's API with your key.
 
 ## Using the page on another task list
 
