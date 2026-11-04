@@ -24,8 +24,8 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   sends it as you and says where. The refresh reads your notes too.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
   **Waiting** (on someone else), **Drop**, **Open** the source, **Undo**.
-- **Two tabs** (`1`, `2`). **Triage** is the back-and-forth: **Quick** (under 10 minutes) and **Deep
-  work** for today, P0 first. **Work** is real work, one task per Linear issue, in Linear's order, and
+- **Two tabs** (`1`, `2`). **Triage** is the back-and-forth for today, P0 first: **Quick** (under 10
+  minutes) and **Your agent**, its asks. **Work** is real work, one task per Linear issue, in Linear's order, and
   the deep work that isn't on Linear yet ([below](#work-linear)). In both, **Waiting**, **Later** and
   **Handled today** are folded below, and Now is the top task that isn't waiting on anyone. Add your
   own tasks in Triage.
@@ -94,8 +94,8 @@ from two places that make one list:
 
 How the feed's tasks show:
 
-- A task whose next move is yours (say go, review, sign, merge) is on the list, linked to its DM thread
-  and its PR. One the agent works on, or that waits on others, is under **Waiting**. A finished one is
+- A task whose next move is yours (say go, review, sign, merge) is under **Your agent** in Triage,
+  linked to its DM thread and its PR; one for a PR of a Linear issue shows on the issue's card in Work. One the agent works on, or that waits on others, is under **Waiting**. A finished one is
   under **Handled today**, and so is a review once the agents agree: approving and merging it is the
   author's and the humans' to do. A task leaves the list when aag stops listing it.
 - The **Your agent** card on the side has the rest: who has each move, what each agent is doing now,

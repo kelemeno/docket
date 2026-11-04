@@ -111,9 +111,10 @@ window.docketPage = function (el, opts = {}) {
       + `<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
   }
   // Two views of one list. Work: real work, one task per Linear issue (linear.py) in Linear's order,
-  // and the deep work that isn't on Linear yet. Triage: the rest, the quick back-and-forth. Your agent's
-  // task for an issue shows with the issue. The tab is remembered in this browser.
-  const work = (t) => !!(t.linear || (t.issue && !t.aag) || (t.kind === "deep" && !t.issue));
+  // and the deep work that isn't on Linear yet. Triage: the rest, the quick back-and-forth, with your
+  // agent's asks in a list of their own; its task for an issue shows with the issue. The tab is
+  // remembered in this browser.
+  const work = (t) => !!(t.linear || (t.issue && !t.aag) || (t.kind === "deep" && !t.issue && !t.aag));
   const triage = (t) => !work(t) && !(t.aag && t.issue);
   const issueOf = (d, t) => t.linear ? t : (d.tasks || []).find((x) => x.linear && x.linear.key === t.issue);
   const level = (d, t) => { const i = issueOf(d, t); return i ? [i.linear.level, i.linear.sort] : [9, 0]; };
@@ -184,6 +185,8 @@ window.docketPage = function (el, opts = {}) {
   }
   views.triage = docket(box("triage"), {
     ...base("triage"), show: triage,
+    lists: [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => !t.aag) },
+            { key: "agent", title: "Your agent", empty: "Your agent needs nothing from you.", pick: (l) => l.filter((t) => t.aag) }],
     add: (text, kind) => both("triage", post("/task", { action: "add", value: text, kind })),
     empty: (d) => d.refreshed ? `<p class="title">Nothing due today.</p><p class="meta">Everything open is waiting on others or planned for later. Real work is under Work.</p>`
       : `<p class="title">No tasks yet.</p><p class="meta">The first refresh reads the last 3 days of whatever your Claude Code is connected to: Slack, email, calendar, GitHub, Linear, Notion. It takes a few minutes.</p>`,

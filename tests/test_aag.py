@@ -1,9 +1,14 @@
 """Your agent's tasks on the list (aag.py): where each goes, what stays yours, how aag's feed and the
 refresh's reading of the agent's DM threads make one list, and reading aag here or over SSH."""
+import os
 import subprocess
+import tempfile
 import time
 import unittest
 from unittest import mock
+
+if "docket-test-" not in os.environ.get("DOCKET_HOME", ""):  # never your own list, however the tests are run
+    os.environ["DOCKET_HOME"] = tempfile.mkdtemp(prefix="docket-test-")
 
 from docket import aag, app, store, tasks
 

@@ -1,8 +1,13 @@
 """Linear on the list (linear.py): your issues and the reviews you're asked for in comments, whose
 move each is from its PRs and your agent, and coupling the rest of the list to them."""
 import json
+import os
+import tempfile
 import unittest
 from unittest import mock
+
+if "docket-test-" not in os.environ.get("DOCKET_HOME", ""):  # never your own list, however the tests are run
+    os.environ["DOCKET_HOME"] = tempfile.mkdtemp(prefix="docket-test-")
 
 from docket import app, linear, store, tasks
 

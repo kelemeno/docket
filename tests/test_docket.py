@@ -8,6 +8,9 @@ import urllib.error
 import urllib.request
 from unittest import mock
 
+if "docket-test-" not in os.environ.get("DOCKET_HOME", ""):  # never your own list, however the tests are run
+    os.environ["DOCKET_HOME"] = tempfile.mkdtemp(prefix="docket-test-")
+
 from docket import app, store, tasks
 
 DAY, NOW = "2026-03-02", "2026-03-02T11:00:00"
