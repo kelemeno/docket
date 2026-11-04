@@ -275,6 +275,37 @@ class Prs(unittest.TestCase):
         self.assertEqual(s(reviews=[("me", "APPROVED", "2026-03-02T11:00:00Z"), ("sam", "COMMENTED", "2026-03-02T12:00:00Z")]), "approved")
         self.assertEqual(s(reviews=[("me", "DISMISSED", "2026-03-02T11:00:00Z")]), "review requested")
 
+    def test_a_review_you_approved_closes_without_a_refresh(self):
+        url = "https://github.com/Org/repo/pull/7"
+        asked = task(title="Look at the CI pin", review=url + "/files")
+        old = task(title="Review repo#7: pin CI", sources=[{"label": "github repo#7", "link": url + "#discussion_r1"}])
+        two = task(title="Review repo#7 and repo#8", sources=[{"label": "a", "link": url}, {"label": "b", "link": url[:-1] + "8"}])
+        other = task(title="Reply to Sam on repo#7", sources=[{"label": "github repo#7", "link": url}])
+        yours = task(title="Review repo#7", review=url)
+        linear = {**task(title="Review repo#7 on Linear", review=url), "linear": {"key": "EVM-1"}}  # linear.py's to close
+        tasks.save({"tasks": [asked, old, two, other, yours, linear]})
+        tasks.act(yours["id"], "waiting", None, DAY, NOW)  # you set its status: it stays yours
+        node = {"number": 7, "title": "ci: pin", "url": url, "updatedAt": "2026-03-02T10:43:07Z", "repository": {"nameWithOwner": "Org/repo"},
+                **self.reviewed(reviews=[("me", "APPROVED", "2026-03-02T10:43:07Z")], pushed="2026-03-02T10:11:20Z")}
+        answer = mock.Mock(returncode=0, stdout=json.dumps({"data": {"viewer": {"login": "me"}, "search": {"nodes": [node]}}}))
+        with mock.patch.object(app, "_which", return_value="gh"), mock.patch.object(app.subprocess, "run", return_value=answer), \
+                mock.patch.dict(app._prs):
+            app._read_prs()
+            self.assertEqual(app._prs["reviewing"][0]["state"], "approved")
+        got = {t["title"]: t for t in tasks.load()["tasks"]}
+        self.assertEqual([got[t["title"]]["status"] for t in (asked, old, two, other, yours, linear)],
+                         ["done", "done", "open", "open", "waiting", "open"])
+        self.assertEqual(got[old["title"]]["closed_by"], "gh")
+        self.assertTrue(got[old["title"]]["evidence"].startswith("You approved org/repo#7 on GitHub"))
+
+    def test_the_refresh_names_the_pr_a_review_is_for(self):
+        reg = {"tasks": []}
+        tasks.merge(reg, {"new": [{"title": "Review repo#7", "review": "https://github.com/o/r/pull/7"},
+                                  {"title": "Read the doc", "review": "https://example.com/doc"}]}, DAY, NOW)
+        self.assertEqual([t.get("review") for t in reg["tasks"]], ["https://github.com/o/r/pull/7", None])
+        tasks.merge(reg, {"updates": [{"id": reg["tasks"][1]["id"], "review": "https://github.com/o/r/pull/8"}]}, DAY, NOW)
+        self.assertEqual(tasks.pr_key(reg["tasks"][1]["review"]), "o/r#8")
+
     def test_the_page_never_waits_for_github(self):
         with mock.patch.object(app, "_read_prs") as read, mock.patch.dict(app._prs, {"at": 0, "read": False}):
             out = app.prs()

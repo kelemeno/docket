@@ -13,7 +13,8 @@ P0|P1|P2, status open|waiting|done|dropped, do (the day to work on it, not the d
 (YYYY-MM-DDTHH:MM: snoozed for a while, e.g. 30 minutes while an agent runs), rolled,
 sources [{label, link}], sessions [Claude Code session titles], created, updated, done_at, evidence,
 closed_by, mine, notes [{at, by you|claude, text}] (what you told Claude about the task and its
-answers), asked (when your latest note is still waiting for one).
+answers), asked (when your latest note is still waiting for one), review (for a review asked of you:
+the PR's link; the task closes once gh shows you approved it).
 """
 import datetime as dt
 import re
@@ -33,6 +34,8 @@ KEEP_CLOSED_DAYS = 14
 TEXT = {"title": 160, "next": 240, "why": 240, "who": 80}
 KEEP_NOTES = 12
 ESTIMATES = {"15", "30", "60", "120", "240"}
+PR = re.compile(r"^https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)", re.I)
+ASKS_REVIEW = ("review", "re-review", "approve")  # how a task from before the "review" field is titled
 
 
 def extra(item, current):
@@ -102,6 +105,16 @@ def _merge(old, new):
     return out
 
 
+def pr_key(link):
+    """The PR a GitHub link points at, as "owner/repo#n" (lowercase); None for any other link."""
+    m = PR.match(str(link or ""))
+    return f"{m.group(1).lower()}#{m.group(2)}" if m else None
+
+
+def _review(n):
+    return {"review": _text(n["review"], 400)} if isinstance(n, dict) and pr_key(n.get("review")) else {}
+
+
 def _new(n, today, now):
     return {"id": uuid.uuid4().hex[:8], **{k: _text(n.get(k), lim) for k, lim in TEXT.items()},
             "kind": n.get("kind") if n.get("kind") in KIND else "deep",
@@ -109,7 +122,7 @@ def _new(n, today, now):
             "status": "waiting" if n.get("status") == "waiting" else "open",
             "do": n["do"] if isinstance(n.get("do"), str) and DAY.match(n["do"]) and n["do"] >= today else today,
             "rolled": 0, "sources": _sources(n.get("sources")), "sessions": _titles(n.get("sessions")),
-            "created": now, "updated": now, "mine": [], **extra(n, None)}
+            "created": now, "updated": now, "mine": [], **_review(n), **extra(n, None)}
 
 
 def _titles(items):
@@ -174,8 +187,39 @@ def _update(t, u, mine, today, now):
         t["do"] = u["do"]
     t["sources"] = _merge(t["sources"], _sources(u.get("sources")))[:6]
     t["sessions"] = list(dict.fromkeys(t.get("sessions", []) + _titles(u.get("sessions"))))[:5]
+    t.update(_review(u))
     t.update(extra(u, t))
     t["updated"] = now
+
+
+def reviewed(reg, approved, now):
+    """Closes the review tasks whose PR gh shows you approved: `approved` is {pr_key: when you approved
+    it}, your latest review being an approval with no commits since. A review task is one the refresh
+    gave a "review" link, or one from before that titled Review…/Approve… that links one PR. Not one
+    whose status you set yourself, nor your agent's or Linear's (aag and linear.py have the say on
+    those). Returns whether anything changed."""
+    changed = False
+    for t in reg["tasks"]:
+        if t["status"] not in OPEN or t.get("aag") or t.get("linear") or "status" in (t.get("mine") or []):
+            continue
+        key = pr_key(t.get("review"))
+        if not key and t["title"].casefold().startswith(ASKS_REVIEW):
+            keys = {pr_key(s["link"]) for s in t["sources"]} - {None}
+            key = keys.pop() if len(keys) == 1 else None
+        if key in approved:
+            t.update(status="done", done_at=now, closed_by="gh", updated=now,
+                     evidence=f"You approved {key} on GitHub{_at(approved[key], now)}")
+            changed = True
+    return changed
+
+
+def _at(stamp, now):
+    """" at 11:43" on this computer's clock (with the day, when it's not today); "" if it's no time."""
+    try:
+        t = dt.datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).astimezone()
+    except ValueError:
+        return ""
+    return t.strftime(" at %H:%M" if t.date().isoformat() == now[:10] else " on %Y-%m-%d at %H:%M")
 
 
 def roll(reg, today):
