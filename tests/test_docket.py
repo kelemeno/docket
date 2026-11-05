@@ -145,6 +145,17 @@ class Sources(unittest.TestCase):
         self.assertEqual(len(reg["tasks"]), 1)
 
 
+class Order(unittest.TestCase):
+    def test_your_order_is_kept_without_unknown_ids_or_repeats(self):
+        a, b = task(), task(title="Answer Sam")
+        tasks.save({"tasks": [a, b]})
+        reg = tasks.act(a["id"], "order", [b["id"], "nope", a["id"], b["id"]], DAY, NOW)
+        self.assertEqual(reg["order"], [b["id"], a["id"]])
+        self.assertEqual(tasks.load()["order"], [b["id"], a["id"]])
+        with self.assertRaises(ValueError):
+            tasks.act(a["id"], "order", "b", DAY, NOW)
+
+
 class Kind(unittest.TestCase):
     def test_moving_a_task_to_work_is_yours_and_the_refresh_leaves_it(self):
         t = task()

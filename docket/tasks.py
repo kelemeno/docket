@@ -6,7 +6,7 @@ alone); a task is done only with evidence (a draft isn't sent, an approval isn't
 isn't done); a closed task stays closed unless you reopen it; an overdue task rolls to today and
 counts how often it slipped.
 
-    tasks.json   {"since", "refreshed", "rolled_on", "meetings": {"day", "items"}, "tasks": [...]}
+    tasks.json   {"since", "refreshed", "rolled_on", "meetings": {"day", "items"}, "order": [task ids], "tasks": [...]}
 
 A task: id, title, next (the very next step), why, who (who's waiting), kind quick|deep, priority
 P0|P1|P2, status open|waiting|done|dropped, do (the day to work on it, not the deadline), until
@@ -232,6 +232,13 @@ def act(task_id, action, value, today, now):
             else:
                 raise ValueError("snooze needs a day from today on, or a time from now on")
             mine.add("do")
+        elif action == "order":  # the order you'll do things in (the day's plan, page.js): the whole list
+            if not isinstance(value, list):
+                raise ValueError("order needs a list of task ids")
+            ids = {x["id"] for x in reg["tasks"]}
+            reg["order"] = list(dict.fromkeys(i for i in value if i in ids))[:200]
+            save(reg)
+            return reg
         elif action in ("priority", "kind"):
             if value not in (PRIORITY if action == "priority" else KIND):
                 raise ValueError(f"bad {action}")

@@ -22,11 +22,14 @@ window.docketPage = function (el, opts = {}) {
   }
   const minutes = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
   const hhmm = (m) => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
-  // Your open work in today's free time, from now to the end of your hours (settings "hours"): Work
-  // first, in its order, up to 90 minutes a task; your quick ones batched, 10 minutes each, in the gaps
-  // too short for deep work. Worked out again on every load, so it follows the day as it goes.
+  // Your open work in today's free time, from now to the end of your hours (settings "hours"). What you
+  // put in order (dragging in the grid; data.order) goes first, in that order. Then Work, in its order,
+  // up to 90 minutes a task, and your quick ones batched, 10 minutes each, in the gaps too short for
+  // deep work. Worked out again on every load, so it follows the day as it goes.
   const PRI = ["P0", "P1", "P2"];
   const pri = (t) => (t.star ? -1 : 0) + ((PRI.indexOf(t.priority) + 4) % 4);
+  const place = (d, t) => { const i = (d.order || []).indexOf(t.id); return i < 0 ? Infinity : i; };
+  const byOrder = (a, b, d) => { const x = place(d, a), y = place(d, b); return x === y ? 0 : x === Infinity ? 1 : y === Infinity ? -1 : x - y; };
   function plan(d) {
     const [from, to] = String(d.hours || "09:00-18:00").split("-").map((x) => minutes(x.trim()));
     const n = new Date(), now = Math.ceil((n.getHours() * 60 + n.getMinutes()) / 5) * 5;
@@ -37,13 +40,26 @@ window.docketPage = function (el, opts = {}) {
       if (Math.min(s, to) - at >= 15) gaps.push([at, Math.min(s, to)]);
       at = Math.max(at, e);
     }
-    const open = (d.tasks || []).filter((t) => due(d, t));
-    const deep = open.filter(work).sort((a, b) => level(d, a)[0] - level(d, b)[0] || level(d, a)[1] - level(d, b)[1] || pri(a) - pri(b));
-    const quick = open.filter(triage).sort((a, b) => pri(a) - pri(b));
+    const open = (d.tasks || []).filter((t) => due(d, t) && (work(t) || triage(t)));
+    const mine = open.filter((t) => place(d, t) < Infinity).sort((a, b) => byOrder(a, b, d));
+    const rest = open.filter((t) => place(d, t) === Infinity);
+    const deep = rest.filter(work).sort((a, b) => level(d, a)[0] - level(d, b)[0] || level(d, a)[1] - level(d, b)[1] || pri(a) - pri(b));
+    const quick = rest.filter(triage).sort((a, b) => pri(a) - pri(b));
     const out = [];
     for (let [s, e] of gaps) {
-      while (e - s >= 15 && (deep.length || quick.length)) {
-        if (deep.length && (e - s >= 45 || !quick.length && e - s >= 30)) {
+      while (e - s >= 15 && mine.length) {  // yours, in your order: deep ones need 30 minutes, or wait for the next gap
+        const t = mine[0];
+        if (work(t)) {
+          if (e - s < 30) break;
+          const len = e - s - 90 < 15 ? e - s : 90;
+          out.push({ start: s, end: s + len, view: "work", tasks: [mine.shift()] }); s += len;
+        } else {
+          let k = 0; while (k < mine.length && !work(mine[k]) && (k + 1) * 10 <= Math.min(e - s, 30)) k++;
+          out.push({ start: s, end: s + k * 10, view: "triage", tasks: mine.splice(0, k) }); s += k * 10;
+        }
+      }
+      while (e - s >= 15 && (deep.length && !mine.length || quick.length)) {  // the rest; quick ones also fill a gap yours don't fit
+        if (deep.length && !mine.length && (e - s >= 45 || !quick.length && e - s >= 30)) {
           const len = e - s - 90 < 15 ? e - s : 90, t = deep.shift();
           out.push({ start: s, end: s + len, view: "work", tasks: [t] }); s += len;
         } else if (quick.length) {
@@ -52,10 +68,11 @@ window.docketPage = function (el, opts = {}) {
         } else break;
       }
     }
-    return { blocks: out, left: deep.length + quick.length, from, to };
+    return { blocks: out, left: mine.length + deep.length + quick.length, from, to };
   }
   // The day as a grid: meetings where they are (side by side when they overlap), with their call
-  // links, and the plan's blocks dashed; a click on one shows its task.
+  // links, and the plan's blocks dashed; a click on one shows its task, and dragging one onto another
+  // puts it first (your order, data.order).
   const HOUR = 52;
   function meetings(data) {
     if (!(data.meetings || []).length && !data.refreshed) return `<p class="empty">Meetings come with the first refresh.</p>`;
@@ -82,13 +99,14 @@ window.docketPage = function (el, opts = {}) {
       const tm = `<span class="tm">${hhmm(x.s)}–${hhmm(x.e)}</span>`;
       if (x.tasks) {
         const t = x.tasks[0], title = x.tasks.length > 1 ? `Triage · ${x.tasks.length} quick` : t.title;
-        html += `<div class="blk plan ${x.view}${short}" style="${box}" data-task="${esc(t.id)}" data-view="${x.view}" title="${esc(x.tasks.map((o) => o.title).join("\n"))}">${esc(title)} ${tm}</div>`;
+        html += `<div class="blk plan ${x.view}${short}" style="${box}" draggable="true" data-task="${esc(t.id)}" data-ids="${esc(x.tasks.map((o) => o.id).join(" "))}" data-view="${x.view}" title="${esc(x.tasks.map((o) => o.title).join("\n"))}">${esc(title)} ${tm}</div>`;
       } else {
         html += `<div class="blk${short}${x.e <= now ? " past" : ""}" style="${box}">${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener" class="join">Join ↗</a>` : ""}${esc(x.title)} ${tm}</div>`;
       }
     }
     if (now >= top * 60 && now <= end * 60) html += `<div class="nowat" style="top:${y(now)}px"></div>`;
-    const left = p.left ? `<p class="meta">${p.left} more open task${p.left === 1 ? "" : "s"} don't fit before ${hhmm(p.to)}.</p>` : "";
+    const left = (p.left ? `<p class="meta">${p.left} more open task${p.left === 1 ? "" : "s"} don't fit before ${hhmm(p.to)}.</p>` : "")
+      + `<p class="meta">Drag a block onto another to do it first.${(data.order || []).length ? ` <a href="#" data-order-reset>Back to the usual order</a>` : ""}</p>`;
     return `<div class="day" style="height:${y(end * 60) + 8}px">${html}</div>`
       + ((data.meetings || []).length ? "" : `<p class="meta">No meetings today.</p>`) + left;
   }
@@ -208,7 +226,8 @@ window.docketPage = function (el, opts = {}) {
       reply: (t, text) => both(v, post("/reply", { id: t.id, text })),
       refresh: () => opts.run && opts.run.click(),
       side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? `<section class="card"><h2>Your agent <span class="count">${((d.aag.feed || {}).tasks || []).filter((t) => t.column === "needs_you").length || ""}</span></h2>${agent(d)}</section>` : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section><section class="card"><h2>Claude sessions</h2>${sessions(d)}</section>`,
-      sideClick(e, d) {
+      async sideClick(e, d) {
+        if (e.target.closest("[data-order-reset]")) { e.preventDefault(); return both(v, post("/task", { id: d.tasks[0].id, action: "order", value: [] })); }
         const blk = e.target.closest(".blk[data-task]");
         if (blk && !e.target.closest("a")) { show(blk.dataset.view); views[blk.dataset.view].select(blk.dataset.task); return; }
         const b = e.target.closest("button[data-prtab]"); if (!b) return;
@@ -244,7 +263,7 @@ window.docketPage = function (el, opts = {}) {
     if (d.running || d.tasks.some((t) => t.asked) || (d.prs || {}).loading) window.poll = setTimeout(reloadAll, 5000);  // a refresh or an answer coming
   }
   views.triage = docket(box("triage"), {
-    ...base("triage"), show: triage,
+    ...base("triage"), show: triage, rank: byOrder,
     actions: [...base("triage").actions, "work"],
     lists: [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => !t.aag) },
             { key: "agent", title: "Your agent", empty: "Your agent needs nothing from you.", pick: (l) => l.filter((t) => t.aag) }],
@@ -258,10 +277,28 @@ window.docketPage = function (el, opts = {}) {
     can: (t, a) => a !== "triage" || (!t.linear && !t.issue),  // an issue's work stays with the issue
     lists: [{ key: "issues", title: "Linear issues", empty: "Nothing on Linear needs you now.", pick: (l) => l.filter((t) => t.linear || t.issue) },
             { key: "loose", title: "Not on Linear", empty: "All the work here belongs to an issue.", pick: (l) => l.filter((t) => !t.linear && !t.issue) }],
-    rank: (a, b, d) => { const x = level(d, a), y = level(d, b); return x[0] - y[0] || x[1] - y[1]; },
+    rank: (a, b, d) => { const x = level(d, a), y = level(d, b); return byOrder(a, b, d) || x[0] - y[0] || x[1] - y[1]; },
     more: moreWork,
     empty: (d) => `<p class="title">Nothing to work on.</p><p class="meta">Your Linear issues and reviews are waiting on others or planned for later.</p>${linearLine(d)}`,
   });
+  // Dragging a planned block onto another: its tasks go just before that block's, in the order the grid
+  // shows now, and that's your order from then on.
+  let dragged = null;
+  el.addEventListener("dragstart", (e) => { const b = e.target.closest?.(".blk.plan"); if (b) { dragged = b.dataset.ids.split(" "); e.dataTransfer.effectAllowed = "move"; } });
+  el.addEventListener("dragover", (e) => { if (dragged && e.target.closest(".blk.plan")) e.preventDefault(); });
+  el.addEventListener("drop", async (e) => {
+    const target = e.target.closest(".blk.plan"); if (!dragged || !target) return;
+    e.preventDefault();
+    const seq = [...target.closest(".day").querySelectorAll(".blk.plan")].sort((a, b) => parseFloat(a.style.top) - parseFloat(b.style.top))
+      .flatMap((b) => b.dataset.ids.split(" ")).filter((i) => !dragged.includes(i));
+    const at = seq.indexOf(target.dataset.ids.split(" ")[0]);
+    seq.splice(at < 0 ? 0 : at, 0, ...dragged);
+    const id = dragged[0]; dragged = null;
+    try { await post("/task", { id, action: "order", value: seq }); } catch (err) { alert(err.message); }
+    await Promise.all(Object.values(views).map((x) => x.reload()));
+    for (const k in views) views[k].select(null);  // Now: your new first one
+  });
+  el.addEventListener("dragend", () => { dragged = null; });
   function show(v) {
     view = v; try { localStorage.setItem("docket-view", v); } catch {}
     for (const k of ["triage", "work"]) { box(k).hidden = k !== v; el.querySelector(`[data-view="${k}"]`).classList.toggle("on", k === v); }

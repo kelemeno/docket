@@ -25,7 +25,9 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
 - **Today** on the side is your day as a grid: meetings where they fall, with a **Join** link for calls,
   and your open work fitted into the free time from now to the end of your `hours`. Work comes first,
   in its order, up to 90 minutes a task, and quick tasks are batched in the short gaps. Click a block to
-  open its task. The plan is worked out again as the day goes.
+  open its task. Drag a block onto another to do it first: that's your order from then on, for the plan
+  and for Now in both tabs ("Back to the usual order" undoes it). The plan is worked out again as the
+  day goes.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
   **Waiting** (on someone else), **Drop**, **Open** the source, **→ Work** / **→ Triage** (`m`: real
   work or not; the refresh leaves your choice alone), **Undo**.

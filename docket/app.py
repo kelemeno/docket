@@ -418,7 +418,7 @@ class Page:
                 "meetings": m.get("items", []) if m.get("day") == today else [],
                 "refreshed": reg.get("refreshed"), "sessions": listed, "running": self.busy.locked(),
                 "error": self.error, "folder": str(store.HOME), "prs": prs(),
-                "hours": store.settings().get("hours", "09:00-18:00"), **STATE()}
+                "hours": store.settings().get("hours", "09:00-18:00"), "order": reg.get("order", []), **STATE()}
 
 
 def serve(port=PORT, index=None, routes=None):
