@@ -23,9 +23,11 @@
 //                         Quick and Deep work (Waiting, Later and Handled stay)
 //     rank(a, b, data): number        optional: comes before the usual order (★, priority, slips, age)
 //     more(task, data, where): html   optional: more on a task, where "now" (its card) or "row"
-//     queue: {title, empty}           optional: no Now card; one list in your order, waiting ones in it
-//                         greyed, the first you can act on marked next. A row opens in place (click,
-//                         space); drag rows or Shift+J/K to reorder, which calls order(task ids): data
+//     queue: {title, empty, unsorted(task, data), unsortedTitle, unsortedEmpty}   optional: no Now card;
+//                         one list in your order, waiting ones in it greyed, the first you can act on
+//                         marked next, and above it the tasks not in your order yet (unsorted). A row
+//                         opens in place (click, space); drag rows, Shift+J/K or To top / To end to
+//                         place them, which calls order(task ids in your order, task ids shown): data
 //   Buttons with data-act="action" data-value="v" in more(…, "now") call act(task, action, v).
 //   })  →  {reload(), render(), select(task id), data}
 (() => {
@@ -41,7 +43,8 @@
   window.docket = function (el, src) {
     const ai = src.assistant || "Claude";
     const Q = src.queue;
-    const LISTS = Q ? [{ key: "queue", title: Q.title || "In order", empty: Q.empty || "Nothing to do." }] : src.lists || [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => t.kind === "quick") },
+    const LISTS = Q ? [...(Q.unsorted ? [{ key: "unsorted", title: Q.unsortedTitle || "To sort", empty: Q.unsortedEmpty || "" }] : []),
+                       { key: "queue", title: Q.title || "In order", empty: Q.empty || "Nothing to do." }] : src.lists || [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => t.kind === "quick") },
                                 { key: "deep", title: "Deep work", empty: "No deep work for today.", pick: (l) => l.filter((t) => t.kind !== "quick") }];
     const show = (t) => !src.show || src.show(t, data);
     const more = (t, where) => src.more ? src.more(t, data, where) || "" : "";
@@ -55,7 +58,7 @@
           <input placeholder="Add a task and press Enter  (n)" autocomplete="off" aria-label="New task">
           <select aria-label="Kind"><option value="quick">Quick</option><option value="deep">Deep work</option></select>
         </form>` : ""}
-        ${LISTS.map((l) => `<section class="card"><h2>${esc(l.title)} <span class="count" data-n="${esc(l.key)}"></span></h2><div data-list="${esc(l.key)}"></div></section>`).join("")}
+        ${LISTS.map((l) => `<section class="card"><h2>${esc(l.title)} <span class="count" data-n="${esc(l.key)}"></span></h2><div data-list="${esc(l.key)}"${Q ? " data-q" : ""}></div></section>`).join("")}
         ${src.actions.includes("waiting") ? `<details class="card"><summary>Waiting on others <span class="count" data-n="waiting"></span></summary><div data-list="waiting"></div></details>` : ""}
         <details class="card"><summary>Later <span class="count" data-n="later"></span></summary><div data-list="later"></div></details>
         <details class="card"><summary>Handled today <span class="count" data-n="handled"></span></summary><div data-list="handled"></div></details>
@@ -74,12 +77,17 @@
     const when = (t) => t.until && t.until.startsWith(data.today) ? "until " + t.until.slice(11) : day(t.do);
     const rank = (a, b) => (src.rank ? src.rank(a, b, data) : 0) || (b.star ? 1 : 0) - (a.star ? 1 : 0) || (PRI.indexOf(a.priority) + 4) % 4 - (PRI.indexOf(b.priority) + 4) % 4
       || (b.rolled || 0) - (a.rolled || 0) || String(a.created).localeCompare(String(b.created));
+    // a queue's two lists: what isn't in your order yet, and your order
+    const queued = (all) => {
+      const out = Q.unsorted ? all.filter((t) => Q.unsorted(t, data)) : [];
+      return { unsorted: out, queue: all.filter((t) => !out.includes(t)) };
+    };
     function groups() {
       const tasks = (data.tasks || []).filter(show);
       const open = tasks.filter((t) => t.status === "open" && due(t)).sort(rank);
       const waiting = tasks.filter((t) => t.status === "waiting").sort(rank);
       return {
-        open, lists: Q ? { queue: [...open, ...waiting].sort(rank) } : Object.fromEntries(LISTS.map((l) => [l.key, l.pick(open)])),
+        open, lists: Q ? queued([...open, ...waiting].sort(rank)) : Object.fromEntries(LISTS.map((l) => [l.key, l.pick(open)])),
         waiting: Q ? [] : waiting,
         later: tasks.filter((t) => t.status === "open" && !due(t)).sort((a, b) => (a.until || a.do).localeCompare(b.until || b.do) || rank(a, b)),
         handled: tasks.filter((t) => (t.status === "done" || t.status === "dropped") && String(t.done_at || "").startsWith(data.today)),
@@ -143,7 +151,7 @@
     }
     function rows(list, opts = {}) {
       if (!list.length) return `<p class="empty">${opts.empty || "Nothing."}</p>`;
-      const next = opts.queue && list.find((t) => t.status === "open");
+      const next = opts.queue && list.find((t) => t.id === opts.next);
       return list.map((t) => {
         const s0 = (t.sources || [])[0];
         const sub = opts.queue ? [more(t, "row"), t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "", t.status === "waiting" ? "waiting on others" : ""].filter(Boolean).join(" · ")
@@ -153,6 +161,7 @@
           .filter(Boolean).join(" · ");
         const subline = sub + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`
+          : opts.unsorted ? `<button data-row="top" title="First in your order">To top</button><button data-row="end" title="Last in your order">To end</button>`
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
         const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && t.status === "waiting" ? " blocked" : "")
           + (t === next ? " next" : "") + (opts.queue && t.id === opened ? " opened" : "");
@@ -169,8 +178,11 @@
         const box = el.querySelector(`[data-list="${k}"]`); if (!box) return;
         put(box, rows(list, opts)); el.querySelector(`[data-n="${k}"]`).textContent = list.length || "";
       };
-      for (const l of LISTS) fill(l.key, g.lists[l.key], { empty: l.empty, queue: !!Q });
-      if (Q && opened) { const r = el.querySelector(`[data-list="queue"] .row[data-id="${CSS.escape(opened)}"]`); if (r && r.nextSibling !== nowEl) r.after(nowEl); }
+      // in a queue, next is the first you can act on in your order, else in what's to sort
+      const next = Q && (g.lists.queue.find((t) => t.status === "open") || g.lists.unsorted.find((t) => t.status === "open"));
+      for (const l of LISTS) fill(l.key, g.lists[l.key], { empty: l.empty, queue: !!Q, unsorted: l.key === "unsorted", next: next && next.id });
+      if (Q) el.querySelector('[data-list="unsorted"]')?.closest("section").toggleAttribute("hidden", !g.lists.unsorted.length);
+      if (Q && opened) { const r = el.querySelector(`[data-q] .row[data-id="${CSS.escape(opened)}"]`); if (r && r.nextSibling !== nowEl) r.after(nowEl); }
       fill("waiting", g.waiting); fill("later", g.later, { later: true }); fill("handled", g.handled, { closed: true, empty: "Nothing yet." });
       put(part("side"), src.side(data));
       part("foot").textContent = src.foot ? src.foot(data) : "";
@@ -225,33 +237,37 @@
       if (b && b.dataset.row === "done") return act(t, "done", null, "Done");
       if (b && b.dataset.row === "snooze1") return act(t, "snooze", snoozeDay(1), "Snoozed");
       if (b && b.dataset.row === "restore") return act(t, "restore", { ...t, status: "open", done_at: null }, "Back on the list");
-      if (Q && r.closest('[data-list="queue"]')) { sel = t.id; opened = opened === t.id ? null : t.id; return render(); }
+      if (b && (b.dataset.row === "top" || b.dataset.row === "end")) {
+        const ids = groups().lists.queue.map((x) => x.id);
+        return reorder(b.dataset.row === "top" ? [t.id, ...ids] : [...ids, t.id]);
+      }
+      if (Q && r.closest("[data-q]")) { sel = t.id; opened = opened === t.id ? null : t.id; return render(); }
       sel = t.id; render(); scrollTo({ top: 0, behavior: "smooth" });
     });
     // a queue's order: drag a row onto another (above its middle: before it; below: after it)
     async function reorder(ids) {
-      try { data = await src.order(ids); } catch (e) { return toast(e.message || "That didn't work."); }
+      const g = groups(), shown = [...g.lists.unsorted, ...g.lists.queue].map((t) => t.id);
+      try { data = await src.order(ids, shown); } catch (e) { return toast(e.message || "That didn't work."); }
       render();
     }
     let dragging = null;
     if (Q) {
-      const box = () => el.querySelector('[data-list="queue"]');
-      el.addEventListener("dragstart", (e) => { const r = e.target.closest?.('[data-list="queue"] .row'); if (r) { dragging = r.dataset.id; e.dataTransfer.effectAllowed = "move"; r.classList.add("dragging"); } });
+      el.addEventListener("dragstart", (e) => { const r = e.target.closest?.("[data-q] .row"); if (r) { dragging = r.dataset.id; e.dataTransfer.effectAllowed = "move"; r.classList.add("dragging"); } });
       el.addEventListener("dragend", () => { dragging = null; el.querySelectorAll(".row.dragging, .row.dropbefore, .row.dropafter").forEach((r) => r.classList.remove("dragging", "dropbefore", "dropafter")); });
       el.addEventListener("dragover", (e) => {
-        const r = dragging && e.target.closest('[data-list="queue"] .row'); if (!r) return;
+        const r = dragging && e.target.closest("[data-q] .row"); if (!r) return;
         e.preventDefault();
         const after = e.clientY > r.getBoundingClientRect().top + r.offsetHeight / 2;
-        box().querySelectorAll(".dropbefore, .dropafter").forEach((x) => x.classList.remove("dropbefore", "dropafter"));
+        el.querySelectorAll(".dropbefore, .dropafter").forEach((x) => x.classList.remove("dropbefore", "dropafter"));
         if (r.dataset.id !== dragging) r.classList.add(after ? "dropafter" : "dropbefore");
       });
       el.addEventListener("drop", (e) => {
-        const r = dragging && e.target.closest('[data-list="queue"] .row'); if (!r) return;
+        const r = dragging && e.target.closest("[data-q] .row"); if (!r) return;
         e.preventDefault();
         const after = e.clientY > r.getBoundingClientRect().top + r.offsetHeight / 2, moved = dragging;
         const ids = groups().lists.queue.map((t) => t.id).filter((i) => i !== moved);
-        const at = ids.indexOf(r.dataset.id); if (at < 0) return;
-        ids.splice(at + (after ? 1 : 0), 0, moved);
+        // onto your order: there; onto what's to sort: out of your order again
+        if (r.closest('[data-list="queue"]')) { const at = ids.indexOf(r.dataset.id); if (at < 0) return; ids.splice(at + (after ? 1 : 0), 0, moved); }
         reorder(ids);
       });
     }
@@ -273,10 +289,14 @@
       const k = e.shiftKey && /^[jk]$/i.test(e.key) ? e.key.toUpperCase() : e.key;  // Shift+J may come as "j" with shift
       const action = Object.keys(KEYS).find((a) => KEYS[a] === k && src.actions.includes(a));
       if (k === "j" || k === "k") { const n = list[Math.max(0, Math.min(list.length - 1, i + (k === "j" ? 1 : -1)))]; if (n) { sel = n.id; if (opened) opened = n.id; render(); } }
-      else if (Q && (k === "J" || k === "K") && i >= 0) {
-        const ids = list.map((t) => t.id), j = Math.max(0, Math.min(ids.length - 1, i + (k === "J" ? 1 : -1)));
-        if (j === i) return;
-        ids.splice(j, 0, ...ids.splice(i, 1)); reorder(ids);
+      else if (Q && (k === "J" || k === "K") && g.lists.queue.some((t) => t.id === sel)) {
+        const ids = g.lists.queue.map((t) => t.id), at = ids.indexOf(sel), j = Math.max(0, Math.min(ids.length - 1, at + (k === "J" ? 1 : -1)));
+        if (j === at) return;
+        ids.splice(j, 0, ...ids.splice(at, 1)); reorder(ids);
+      }
+      else if (Q && (k === "J" || k === "K") && i >= 0) {  // to sort: Shift+K puts it first in your order, Shift+J last
+        const ids = g.lists.queue.map((t) => t.id);
+        reorder(k === "K" ? [sel, ...ids] : [...ids, sel]);
       }
       else if (Q && (k === " " || k === "Enter") && sel) { opened = opened === sel ? null : sel; render(); }
       else if (action) nowAction(action);

@@ -200,19 +200,27 @@ window.docketPage = function (el, opts = {}) {
   const est = (t) => t.est || (work(t) ? 90 : 10);
   const dur = (m) => m < 60 ? m + "m" : m % 60 ? (m / 60).toFixed(1) + "h" : m / 60 + "h";
   const EST = [15, 30, 60, 120, 240];
+  // your agent's open tasks on the same work: its issue, or one of its PRs
+  const prsOf = (t) => new Set((t.sources || []).map((s) => (s.link || "").match(/github\.com\/[^/]+\/[^/]+\/pull\/\d+/)?.[0]).filter(Boolean));
+  function agentsOn(d, t) {
+    const key = t.linear ? t.linear.key : t.issue, mine = prsOf(t);
+    return (d.tasks || []).filter((x) => x.aag && x.id !== t.id && x.status !== "done" && x.status !== "dropped"
+      && ((key && x.issue === key) || [...prsOf(x)].some((p) => mine.has(p))));
+  }
   function moreWork(t, d, where) {
-    const i = t.linear, agents = i ? (d.tasks || []).filter((x) => x.aag && x.issue === i.key && x.status !== "done" && x.status !== "dropped") : [];
+    const i = t.linear;
+    const helpers = agentsOn(d, t);
+    const create = "https://linear.new?title=" + encodeURIComponent(t.title) + "&description=" + encodeURIComponent([t.next, t.why, ...(t.sources || []).map((s) => s.link)].filter(Boolean).join("\n\n"));
     if (where === "row") {
-      const fresh = (d.order || []).length && place(d, t) === Infinity;
-      return [i ? esc(i.key) : t.issue ? esc(t.issue) : `<span style="color:var(--warn)">not on Linear</span>`,
-              `<span class="${t.est ? "" : "meta"}">${dur(est(t))}</span>`, fresh && `<span class="chip newmark">new</span>`].filter(Boolean).join(" · ");
+      return [i ? esc(i.key) : t.issue ? esc(t.issue) : `<span style="color:var(--warn)">not on Linear</span> <a href="${esc(create)}" target="_blank" rel="noopener">create ↗</a>`,
+              t.aag && "your agent", ...helpers.map((x) => `agent: ${esc(x.next)}`),
+              `<span class="${t.est ? "" : "meta"}">${dur(est(t))}</span>`].filter(Boolean).join(" · ");
     }
     const pick = `<div class="estpick"><span class="meta">Takes</span>${EST.map((m) => `<button data-act="est" data-value="${m}"${t.est === m ? ' class="on"' : ""}>${dur(m)}</button>`).join("")}${t.est ? "" : `<span class="meta">(${dur(est(t))} until you say)</span>`}</div>`;
-    if (i) return `<div class="chips"><span class="chip">${esc(i.key)}</span><span class="chip">${ROLE[i.role] || ""}</span><span class="chip">${esc(i.state)}</span></div>`
-      + agents.map((x) => `<p class="why">Your agent: ${esc(x.next)}${(x.sources || [])[0] && x.sources[0].link ? ` · <a href="${esc(x.sources[0].link)}" target="_blank" rel="noopener">${esc(x.sources[0].label)} ↗</a>` : ""}</p>`).join("") + pick;
-    if (t.issue) return pick;
-    const url = "https://linear.new?title=" + encodeURIComponent(t.title) + "&description=" + encodeURIComponent([t.next, t.why, ...(t.sources || []).map((s) => s.link)].filter(Boolean).join("\n\n"));
-    return pick + `<p class="meta" style="color:var(--warn)">Not on Linear · <a href="${esc(url)}" target="_blank" rel="noopener">create it ↗</a> · or name its key in a note</p>`;
+    const agentLines = helpers.map((x) => `<p class="why">Your agent: ${esc(x.next)}${(x.sources || [])[0] && x.sources[0].link ? ` · <a href="${esc(x.sources[0].link)}" target="_blank" rel="noopener">${esc(x.sources[0].label)} ↗</a>` : ""}</p>`).join("");
+    if (i) return `<div class="chips"><span class="chip">${esc(i.key)}</span><span class="chip">${ROLE[i.role] || ""}</span><span class="chip">${esc(i.state)}</span></div>` + agentLines + pick;
+    if (t.issue) return agentLines + pick;
+    return agentLines + pick + `<p class="meta" style="color:var(--warn)">Not on Linear · <a href="${esc(create)}" target="_blank" rel="noopener">create it ↗</a> · or name its key in a note</p>`;
   }
   function linearLine(d) {
     const l = d.linear;
@@ -287,8 +295,12 @@ window.docketPage = function (el, opts = {}) {
     ...base("work"), show: work,
     actions: [...base("work").actions, "triage"],
     can: (t, a) => a !== "triage" || (!t.linear && !t.issue),  // an issue's work stays with the issue
-    queue: { title: "Your order", empty: "Nothing to work on: your Linear issues and reviews are waiting on others or planned for later." },
-    order: (ids) => both("work", post("/task", { id: ids[0], action: "order", value: [...ids, ...(views.work.data.order || []).filter((i) => !ids.includes(i))] })),
+    queue: {
+      title: "Your order", empty: "Nothing in your order yet: drag tasks here from To sort, or use To top / To end.",
+      unsorted: (t, d) => place(d, t) === Infinity, unsortedTitle: "To sort",
+    },
+    // your order as it is now, and what it had that isn't shown (snoozed, later) stays at the end
+    order: (ids, shown) => both("work", post("/task", { id: ids[0] || shown[0], action: "order", value: [...ids, ...(views.work.data.order || []).filter((i) => !shown.includes(i))] })),
     // your order, then priority (Docket's own, after this), and Linear's order within one
     rank: (a, b, d) => { const x = level(d, a), y = level(d, b); return byOrder(a, b, d) || (a.priority === b.priority ? x[0] - y[0] || x[1] - y[1] : 0); },
     more: moreWork,
