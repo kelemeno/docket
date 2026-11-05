@@ -296,7 +296,7 @@ window.docketPage = function (el, opts = {}) {
     actions: [...base("work").actions, "triage"],
     can: (t, a) => a !== "triage" || (!t.linear && !t.issue),  // an issue's work stays with the issue
     queue: {
-      title: "Your order", empty: "Nothing in your order yet: drag tasks here from To sort, or use To top / To end.",
+      heading: "Your work", title: "Your order", empty: "Nothing to work on: your issues and reviews are waiting on others or planned for later.",
       unsorted: (t, d) => place(d, t) === Infinity, unsortedTitle: "To sort",
     },
     // your order as it is now, and what it had that isn't shown (snoozed, later) stays at the end

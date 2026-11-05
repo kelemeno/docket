@@ -36,9 +36,11 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
     and **Your agent**, its quick asks. **Waiting**, **Later** and **Handled today** are folded below.
     Add your own tasks here.
   - **Work** is your real work as one list in the order you'll do it: one task per Linear issue and
-    the deep work that isn't on Linear yet ([below](#work-linear)). What isn't in your order yet waits
-    in **To sort** above it: **To top**, **To end**, or drag it where it goes. Drag rows, or `Shift+J` /
-    `Shift+K`, to reorder (onto To sort takes one out again). Waiting rows stay in their place, greyed,
+    the deep work that isn't on Linear yet ([below](#work-linear)). What isn't in your order yet comes
+    first, under **To sort**, then a divider and **Your order**. Drag a row where it goes: onto the
+    divider puts it first, between two rows of your order puts it there, onto To sort takes it out
+    again; the page scrolls while you hold it near an edge. **To top** / **To end** and `Shift+J` /
+    `Shift+K` work too. Waiting rows stay in their place, greyed,
     and the first one you can act on is marked **next**. A row says its Linear issue (or links to
     create one) and what your agent is doing on it. Click a row (or `space`) to open it in place: the
     next step, the links, the note to Claude, the buttons, and **Takes** (15 minutes to 4 hours) for

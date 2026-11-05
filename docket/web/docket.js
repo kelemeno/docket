@@ -23,9 +23,9 @@
 //                         Quick and Deep work (Waiting, Later and Handled stay)
 //     rank(a, b, data): number        optional: comes before the usual order (★, priority, slips, age)
 //     more(task, data, where): html   optional: more on a task, where "now" (its card) or "row"
-//     queue: {title, empty, unsorted(task, data), unsortedTitle, unsortedEmpty}   optional: no Now card;
-//                         one list in your order, waiting ones in it greyed, the first you can act on
-//                         marked next, and above it the tasks not in your order yet (unsorted). A row
+//     queue: {heading, title, empty, unsorted(task, data), unsortedTitle}   optional: no Now card; one
+//                         list in your order, waiting ones in it greyed, the first you can act on marked
+//                         next, and above it, past a divider, the tasks not in your order yet. A row
 //                         opens in place (click, space); drag rows, Shift+J/K or To top / To end to
 //                         place them, which calls order(task ids in your order, task ids shown): data
 //   Buttons with data-act="action" data-value="v" in more(…, "now") call act(task, action, v).
@@ -43,8 +43,7 @@
   window.docket = function (el, src) {
     const ai = src.assistant || "Claude";
     const Q = src.queue;
-    const LISTS = Q ? [...(Q.unsorted ? [{ key: "unsorted", title: Q.unsortedTitle || "To sort", empty: Q.unsortedEmpty || "" }] : []),
-                       { key: "queue", title: Q.title || "In order", empty: Q.empty || "Nothing to do." }] : src.lists || [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => t.kind === "quick") },
+    const LISTS = Q ? [{ key: "queue", title: Q.heading || Q.title || "In order", empty: Q.empty || "Nothing to do." }] : src.lists || [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => t.kind === "quick") },
                                 { key: "deep", title: "Deep work", empty: "No deep work for today.", pick: (l) => l.filter((t) => t.kind !== "quick") }];
     const show = (t) => !src.show || src.show(t, data);
     const more = (t, where) => src.more ? src.more(t, data, where) || "" : "";
@@ -153,6 +152,8 @@
       if (!list.length) return `<p class="empty">${opts.empty || "Nothing."}</p>`;
       const next = opts.queue && list.find((t) => t.id === opts.next);
       return list.map((t) => {
+        // a queue's dividers: what's to sort above, your order below (dropping on it puts a task first)
+        if (t.sep) return `<div class="qsep${t.sep === "order" ? " drop" : ""}"${t.sep === "order" ? " data-sep" : ""}>${esc(t.title)} <span class="count">${t.n || ""}</span>${t.hint ? ` <span class="meta">${esc(t.hint)}</span>` : ""}</div>`;
         const s0 = (t.sources || [])[0];
         const sub = opts.queue ? [more(t, "row"), t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "", t.status === "waiting" ? "waiting on others" : ""].filter(Boolean).join(" · ")
           : [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
@@ -161,27 +162,31 @@
           .filter(Boolean).join(" · ");
         const subline = sub + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`
-          : opts.unsorted ? `<button data-row="top" title="First in your order">To top</button><button data-row="end" title="Last in your order">To end</button>`
+          : opts.unsorted && opts.unsorted.has(t.id) ? `<button data-row="top" title="First in your order">To top</button><button data-row="end" title="Last in your order">To end</button>`
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
-        const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && t.status === "waiting" ? " blocked" : "")
+        const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && t.status === "waiting" ? " blocked" : "") + (opts.unsorted?.has(t.id) ? " tosort" : "")
           + (t === next ? " next" : "") + (opts.queue && t.id === opened ? " opened" : "");
-        return `<div class="row${cls}" data-id="${esc(t.id)}"${opts.queue ? ' draggable="true"' : ""}>${opts.queue ? `<span class="grip" title="Drag to reorder (or Shift+J / Shift+K)">⠿</span>` : ""}${pri(t)}
+        return `<div class="row${cls}" data-id="${esc(t.id)}">${opts.queue ? `<span class="grip" title="Drag to reorder (or Shift+J / Shift+K)">⠿</span>` : ""}${pri(t)}
           <div class="body"><div class="t">${t === next ? `<span class="nextmark">next</span>` : ""}${esc(t.title)}</div>${subline ? `<div class="s">${subline}</div>` : ""}</div>
           <div class="quick">${quick}</div></div>`;
       }).join("");
     }
     function render() {
-      if (!data) return;
+      if (!data || drag?.on) return;  // not mid-drag: the rows under the pointer stay put
       const g = groups();
       renderNow(g);
       const fill = (k, list, opts) => {
         const box = el.querySelector(`[data-list="${k}"]`); if (!box) return;
-        put(box, rows(list, opts)); el.querySelector(`[data-n="${k}"]`).textContent = list.length || "";
+        put(box, rows(list, opts)); el.querySelector(`[data-n="${k}"]`).textContent = list.filter((t) => !t.sep).length || "";
       };
       // in a queue, next is the first you can act on in your order, else in what's to sort
       const next = Q && (g.lists.queue.find((t) => t.status === "open") || g.lists.unsorted.find((t) => t.status === "open"));
-      for (const l of LISTS) fill(l.key, g.lists[l.key], { empty: l.empty, queue: !!Q, unsorted: l.key === "unsorted", next: next && next.id });
-      if (Q) el.querySelector('[data-list="unsorted"]')?.closest("section").toggleAttribute("hidden", !g.lists.unsorted.length);
+      // a queue with tasks to sort shows them first, then your order, in one list with a divider between
+      const shownQueue = Q && g.lists.unsorted.length
+        ? [{ sep: "sort", title: Q.unsortedTitle || "To sort", n: g.lists.unsorted.length }, ...g.lists.unsorted,
+           { sep: "order", title: Q.title || "In order", n: g.lists.queue.length, hint: g.lists.queue.length ? "drop here to put it first" : "drag tasks here" }, ...g.lists.queue]
+        : Q && g.lists.queue;
+      for (const l of LISTS) fill(l.key, Q ? shownQueue : g.lists[l.key], { empty: l.empty, queue: !!Q, unsorted: Q && new Set(g.lists.unsorted.map((t) => t.id)), next: next && next.id });
       if (Q && opened) { const r = el.querySelector(`[data-q] .row[data-id="${CSS.escape(opened)}"]`); if (r && r.nextSibling !== nowEl) r.after(nowEl); }
       fill("waiting", g.waiting); fill("later", g.later, { later: true }); fill("handled", g.handled, { closed: true, empty: "Nothing yet." });
       put(part("side"), src.side(data));
@@ -231,7 +236,7 @@
     part("now").addEventListener("keydown", (e) => { if (e.key === "Escape" && e.target.tagName === "INPUT") e.target.blur(); });
     part("now").addEventListener("change", (e) => { if (e.target.type === "date" && e.target.value && current()) act(current(), "snooze", e.target.value, "Snoozed"); });
     el.querySelector("main").addEventListener("click", (e) => {
-      const r = e.target.closest(".row"); if (!r || e.target.closest("a")) return;
+      const r = e.target.closest(".row"); if (!r || e.target.closest("a") || dragged) return;
       const t = data.tasks.find((x) => x.id === r.dataset.id); if (!t) return;
       const b = e.target.closest("button");
       if (b && b.dataset.row === "done") return act(t, "done", null, "Done");
@@ -250,26 +255,51 @@
       try { data = await src.order(ids, shown); } catch (e) { return toast(e.message || "That didn't work."); }
       render();
     }
-    let dragging = null;
+    // dragging a row (pointer events, not the browser's drag and drop: a redraw mid-drag can't cancel it, and the page
+    // scrolls near its edges): onto the divider, first in your order; onto a row of your order, above or below it;
+    // onto one to sort, out of your order. A press that doesn't move is a click.
+    let drag = null, dragged = false;
+    const marks = () => el.querySelectorAll(".dropbefore, .dropafter").forEach((x) => x.classList.remove("dropbefore", "dropafter"));
+    function drop(moved, over, after) {
+      const g = groups(), ids = g.lists.queue.map((t) => t.id).filter((i) => i !== moved);
+      if (over.dataset.sep !== undefined) ids.unshift(moved);
+      else if (ids.includes(over.dataset.id)) ids.splice(ids.indexOf(over.dataset.id) + (after ? 1 : 0), 0, moved);
+      else if (!g.lists.unsorted.some((t) => t.id === over.dataset.id)) return;
+      reorder(ids);
+    }
     if (Q) {
-      el.addEventListener("dragstart", (e) => { const r = e.target.closest?.("[data-q] .row"); if (r) { dragging = r.dataset.id; e.dataTransfer.effectAllowed = "move"; r.classList.add("dragging"); } });
-      el.addEventListener("dragend", () => { dragging = null; el.querySelectorAll(".row.dragging, .row.dropbefore, .row.dropafter").forEach((r) => r.classList.remove("dragging", "dropbefore", "dropafter")); });
-      el.addEventListener("dragover", (e) => {
-        const r = dragging && e.target.closest("[data-q] .row"); if (!r) return;
-        e.preventDefault();
-        const after = e.clientY > r.getBoundingClientRect().top + r.offsetHeight / 2;
-        el.querySelectorAll(".dropbefore, .dropafter").forEach((x) => x.classList.remove("dropbefore", "dropafter"));
-        if (r.dataset.id !== dragging) r.classList.add(after ? "dropafter" : "dropbefore");
+      el.addEventListener("pointerdown", (e) => {
+        const r = e.target.closest("[data-q] .row");
+        if (!r || e.button !== 0 || e.target.closest("a, button, input, select")) return;
+        drag = { id: r.dataset.id, row: r, x: e.clientX, y: e.clientY, at: e.clientY, on: false };
       });
-      el.addEventListener("drop", (e) => {
-        const r = dragging && e.target.closest("[data-q] .row"); if (!r) return;
+      addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        if (!drag.on && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+        if (!drag.on) {
+          drag.on = true; drag.row.classList.add("dragging"); document.body.classList.add("dragging-row");
+          drag.scroll = setInterval(() => { const edge = 70; if (drag && drag.at < edge) scrollBy(0, -14); else if (drag && drag.at > innerHeight - edge) scrollBy(0, 14); }, 16);
+        }
         e.preventDefault();
-        const after = e.clientY > r.getBoundingClientRect().top + r.offsetHeight / 2, moved = dragging;
-        const ids = groups().lists.queue.map((t) => t.id).filter((i) => i !== moved);
-        // onto your order: there; onto what's to sort: out of your order again
-        if (r.closest('[data-list="queue"]')) { const at = ids.indexOf(r.dataset.id); if (at < 0) return; ids.splice(at + (after ? 1 : 0), 0, moved); }
-        reorder(ids);
+        drag.at = e.clientY;
+        const over = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-q] .row, [data-q] [data-sep]");
+        marks(); drag.over = null;
+        if (over && over.dataset.id !== drag.id) {
+          drag.after = over.dataset.sep !== undefined || e.clientY > over.getBoundingClientRect().top + over.offsetHeight / 2;
+          over.classList.add(drag.after ? "dropafter" : "dropbefore"); drag.over = over;
+        }
       });
+      const end = (cancel) => {
+        if (!drag) return;
+        const d = drag; drag = null;
+        clearInterval(d.scroll); marks(); d.row.classList.remove("dragging"); document.body.classList.remove("dragging-row");
+        if (!d.on) return;  // a click
+        dragged = true; setTimeout(() => { dragged = false; }, 0);  // the click that follows isn't one
+        if (!cancel && d.over) drop(d.id, d.over, d.after); else render();
+      };
+      addEventListener("pointerup", () => end(false));
+      addEventListener("pointercancel", () => end(true));
+      addEventListener("keydown", (e) => { if (e.key === "Escape" && drag?.on) end(true); });
     }
     part("side").addEventListener("click", async (e) => {
       if (!src.sideClick) return;
@@ -285,7 +315,7 @@
     if (src.add) part("add").addEventListener("keydown", (e) => { if (e.key === "Escape") e.target.blur(); });
     document.addEventListener("keydown", (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || !data || !onScreen()) return;
-      const g = groups(), list = LISTS.flatMap((l) => g.lists[l.key]), i = list.findIndex((t) => t.id === sel);
+      const g = groups(), list = Q ? [...g.lists.unsorted, ...g.lists.queue] : LISTS.flatMap((l) => g.lists[l.key]), i = list.findIndex((t) => t.id === sel);
       const k = e.shiftKey && /^[jk]$/i.test(e.key) ? e.key.toUpperCase() : e.key;  // Shift+J may come as "j" with shift
       const action = Object.keys(KEYS).find((a) => KEYS[a] === k && src.actions.includes(a));
       if (k === "j" || k === "k") { const n = list[Math.max(0, Math.min(list.length - 1, i + (k === "j" ? 1 : -1)))]; if (n) { sel = n.id; if (opened) opened = n.id; render(); } }

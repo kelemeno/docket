@@ -158,3 +158,11 @@ details.card[open] > summary { margin-bottom: 10px; }
 .estpick button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .chip.newmark { border-color: var(--accent); color: var(--accent); padding: 0 6px; }
 [data-list="queue"] .row .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qsep { font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--text-2); padding: 10px 6px 6px; }
+.qsep:first-child { padding-top: 0; }
+.qsep.drop { margin-top: 8px; border-top: 2px solid var(--border); padding-top: 12px; }
+.qsep.drop .meta { text-transform: none; font-weight: 400; letter-spacing: 0; }
+.qsep.dropafter { box-shadow: inset 0 -2px 0 var(--accent); }
+.row.tosort { border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; }
+body.dragging-row, body.dragging-row * { user-select: none; cursor: grabbing !important; }
+[data-q] .row { touch-action: pan-y; }
