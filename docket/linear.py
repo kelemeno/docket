@@ -53,12 +53,12 @@ THEIRS = {"needs review", "CI running", "waiting on author", "approved"}
 
 ISSUE = ("id identifier title url priority sortOrder state{name type} assignee{name} "
          "attachments{nodes{url metadata}}")
-QUERY = ("query($since:DateTimeOrDuration!){viewer{id name displayName email "
+QUERY = ("query($since:DateTimeOrDuration!){viewer{id name displayName email teams(first:20){nodes{key archivedAt}} "
          "assignedIssues(first:100,filter:{state:{type:{nin:[\"completed\",\"canceled\"]}}}){nodes{" + ISSUE + "}}} "
          "comments(first:100,orderBy:updatedAt,filter:{body:{containsIgnoreCase:\"review:\"},updatedAt:{gt:$since}})"
          "{nodes{id body url createdAt user{name displayName} issue{" + ISSUE + "}}}}")
 
-_feed = {"items": None, "me": None, "at": None, "error": None, "since": None, "read": 0}
+_feed = {"items": None, "me": None, "at": None, "error": None, "since": None, "read": 0, "team": None}
 _lock = threading.Lock()
 _rules = ""  # what rules() said at the last look, for app.RULES_FROM
 
@@ -306,9 +306,13 @@ def poll(read_linear=True):
         api_key, error, got = key(), None, None
         if api_key:
             try:
-                got = items(read(api_key, store.settings().get("reviews_days", 30)))
+                data = read(api_key, store.settings().get("reviews_days", 30))
+                got = items(data)
             except Exception as e:
                 error = str(e)[-200:]
+            else:
+                with _lock:
+                    _feed["team"] = team(data)
         with _lock:
             _feed["read"] = time.time()
             if got is not None:
@@ -326,12 +330,19 @@ def poll(read_linear=True):
     _rules = rules(reg) if feed is not None else ""
 
 
+def team(data):
+    """Your team on Linear (its key): the first of yours that isn't archived."""
+    teams = (((data.get("viewer") or {}).get("teams") or {}).get("nodes") or [])
+    return next((t["key"] for t in teams if not t.get("archivedAt")), None)
+
+
 def state():
-    """For app.STATE: the Work tab's line about Linear."""
+    """For app.STATE: the Work tab's line about Linear, and the team a new issue goes to (settings
+    "linear_team", else yours as Linear says)."""
     with _lock:
         f = dict(_feed)
     return {"linear": {"key": bool(key()), "at": f["at"], "error": f["error"], "since": f["since"],
-                       "count": len(f["items"] or [])}}
+                       "count": len(f["items"] or []), "team": store.settings().get("linear_team") or f["team"]}}
 
 
 def start(wait=10):

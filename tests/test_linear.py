@@ -157,7 +157,15 @@ class Reading(unittest.TestCase):
     def test_poll_without_a_key_reads_nothing_and_says_so(self):
         with mock.patch.object(linear, "key", return_value=""), mock.patch.object(tasks, "load", return_value={"tasks": []}):
             linear.poll()
-        self.assertEqual(linear.state()["linear"], {"key": False, "at": None, "error": None, "since": None, "count": 0})
+        self.assertEqual(linear.state()["linear"], {"key": False, "at": None, "error": None, "since": None, "count": 0, "team": None})
+
+    def test_your_team_is_the_settings_one_else_your_first_live_one_on_linear(self):
+        d = data()
+        d["viewer"]["teams"] = {"nodes": [{"key": "DOC", "archivedAt": "2025-01-01"}, {"key": "EVM", "archivedAt": None}]}
+        self.assertEqual(linear.team(d), "EVM")
+        self.assertIsNone(linear.team(data()))
+        with mock.patch.object(store, "settings", return_value={"linear_team": "OPS"}):
+            self.assertEqual(linear.state()["linear"]["team"], "OPS")
 
     def test_the_rules_go_through_rules_from_and_leave_rules_alone(self):
         app.RULES = "HOST RULES"

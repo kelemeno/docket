@@ -93,6 +93,7 @@ The folder is `$DOCKET_HOME`, or `~/.local/share/docket` by default. In it, `set
 | `agent_paths` | folders where your background agents run: their sessions are only counted, not listed |
 | `aag` | your agent's feed ([below](#your-agent-aag)): unset for the aag on this computer, `"ssh HOST"` where aag runs on a server, or `"off"` |
 | `linear_key` | a Linear personal API key for the Work tab ([below](#work-linear)); or `$LINEAR_API_KEY` |
+| `linear_team` | the team a new issue from **create ↗** goes to (a key like `EVM`); else your first team as Linear says |
 | `reviews_days` | how far back `review:` comments on Linear count (default 30) |
 
 The page's port is `$DOCKET_PORT` (default 8766).
@@ -153,7 +154,8 @@ The rest of the list is coupled to its issue: a task that names the key (`EVM-12
 or to one of its PRs. A task the refresh made about it (a Slack thread about the PR, say) is folded
 into the issue's task, with its why and links. Your agent's task for one of its PRs shows on the
 issue's card and decides its move. Deep work that belongs to no issue shows under **Not on Linear**,
-with a link that opens a new Linear issue filled in from the task. Docket itself never writes to Linear.
+with a link that opens a new Linear issue filled in from the task: your team, you as the assignee, its
+priority, the next step as the description and its links attached. Docket itself never writes to Linear.
 
 ## Safety
 

@@ -200,6 +200,17 @@ window.docketPage = function (el, opts = {}) {
   const est = (t) => t.est || (work(t) ? 90 : 10);
   const dur = (m) => m < 60 ? m + "m" : m % 60 ? (m / 60).toFixed(1) + "h" : m / 60 + "h";
   const EST = [15, 30, 60, 120, 240];
+  // A new Linear issue for a task, filled in (Linear's linear.new parameters): your team, you as the assignee, its
+  // priority, the next step and why as the description, and its links attached as links. Docket writes nothing to Linear.
+  const LINEAR_PRIORITY = { P0: "Urgent", P1: "High", P2: "Medium" };
+  function newIssue(d, t) {
+    const q = new URLSearchParams({ title: t.title, description: [t.next, t.why].filter(Boolean).join("\n\n"), assignee: "me" });
+    if (d.linear && d.linear.team) q.set("team", d.linear.team);
+    if (LINEAR_PRIORITY[t.priority]) q.set("priority", LINEAR_PRIORITY[t.priority]);
+    const links = (t.sources || []).filter((s) => s.link).map((s) => `${s.link}|${String(s.label).replace(/[,|]/g, " ")}`);
+    if (links.length) q.set("links", links.join(","));
+    return "https://linear.new?" + q;
+  }
   // your agent's open tasks on the same work: its issue, or one of its PRs
   const prsOf = (t) => new Set((t.sources || []).map((s) => (s.link || "").match(/github\.com\/[^/]+\/[^/]+\/pull\/\d+/)?.[0]).filter(Boolean));
   function agentsOn(d, t) {
@@ -210,7 +221,7 @@ window.docketPage = function (el, opts = {}) {
   function moreWork(t, d, where) {
     const i = t.linear;
     const helpers = agentsOn(d, t);
-    const create = "https://linear.new?title=" + encodeURIComponent(t.title) + "&description=" + encodeURIComponent([t.next, t.why, ...(t.sources || []).map((s) => s.link)].filter(Boolean).join("\n\n"));
+    const create = newIssue(d, t);
     if (where === "row") {
       return [i ? esc(i.key) : t.issue ? esc(t.issue) : `<span style="color:var(--warn)">not on Linear</span> <a href="${esc(create)}" target="_blank" rel="noopener">create ↗</a>`,
               t.aag && "your agent", ...helpers.map((x) => `agent: ${esc(x.next)}`),
