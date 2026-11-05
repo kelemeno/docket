@@ -111,10 +111,10 @@ window.docketPage = function (el, opts = {}) {
       + `<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
   }
   // Two views of one list. Work: real work, one task per Linear issue (linear.py) in Linear's order,
-  // and the deep work that isn't on Linear yet. Triage: the rest, the quick back-and-forth, with your
-  // agent's asks in a list of their own; its task for an issue shows with the issue. The tab is
-  // remembered in this browser.
-  const work = (t) => !!(t.linear || (t.issue && !t.aag) || (t.kind === "deep" && !t.issue && !t.aag));
+  // and the deep work that isn't on Linear yet, your agent's too. Triage: the rest, the quick
+  // back-and-forth, with your agent's quick asks in a list of their own; its task for an issue shows
+  // with the issue. The tab is remembered in this browser.
+  const work = (t) => !!(t.linear || (t.issue && !t.aag) || (t.kind === "deep" && !t.issue));
   const triage = (t) => !work(t) && !(t.aag && t.issue);
   const issueOf = (d, t) => t.linear ? t : (d.tasks || []).find((x) => x.linear && x.linear.key === t.issue);
   const level = (d, t) => { const i = issueOf(d, t); return i ? [i.linear.level, i.linear.sort] : [9, 0]; };
@@ -188,7 +188,6 @@ window.docketPage = function (el, opts = {}) {
   views.triage = docket(box("triage"), {
     ...base("triage"), show: triage,
     actions: [...base("triage").actions, "work"],
-    can: (t, a) => a !== "work" || !t.aag,  // your agent's go to Work only with their issue
     lists: [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => !t.aag) },
             { key: "agent", title: "Your agent", empty: "Your agent needs nothing from you.", pick: (l) => l.filter((t) => t.aag) }],
     add: (text, kind) => both("triage", post("/task", { action: "add", value: text, kind })),
