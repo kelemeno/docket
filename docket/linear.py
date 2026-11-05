@@ -45,6 +45,8 @@ MENTION = re.compile(r"\[@?[^\]]*\]\(https://linear\.app/[^/\s]+/profiles/([\w.-
                      r"|https://linear\.app/[^/\s]+/profiles/([\w.-]+)|@([\w.-]+)")
 LEVEL = {"urgent": 1, "p0": 1, "high": 2, "p1": 2, "medium": 3, "normal": 3, "p2": 3, "low": 4, "p3": 4}
 STOP = ("done", "drop", "dropped", "off", "none", "no")
+ASKS = re.compile(r"\breview", re.I)  # with a mention of you: a review asked of you
+OVER = ("completed", "canceled", "duplicate")  # an issue in one of these states asks nothing of anyone
 NAMED = {1: "urgent", 2: "high", 3: "medium", 4: "low", 5: "no priority"}
 STATUS = aag.STATUS
 # what a PR's state (app._pr_state, app._review_state) says about whose move it is
@@ -54,8 +56,8 @@ THEIRS = {"needs review", "CI running", "waiting on author", "approved"}
 ISSUE = ("id identifier title description url priority sortOrder state{name type} assignee{name} "
          "attachments{nodes{url metadata}}")
 QUERY = ("query($since:DateTimeOrDuration!){viewer{id name displayName email teams(first:20){nodes{key archivedAt}} "
-         "assignedIssues(first:100,filter:{state:{type:{nin:[\"completed\",\"canceled\"]}}}){nodes{" + ISSUE + "}}} "
-         "comments(first:100,orderBy:updatedAt,filter:{body:{containsIgnoreCase:\"review:\"},updatedAt:{gt:$since}})"
+         "assignedIssues(first:100,filter:{state:{type:{nin:[\"completed\",\"canceled\",\"duplicate\"]}}}){nodes{" + ISSUE + "}}} "
+         "comments(first:150,orderBy:updatedAt,filter:{body:{containsIgnoreCase:\"review\"},updatedAt:{gt:$since}})"
          "{nodes{id body url createdAt user{name displayName} issue{" + ISSUE + "}}}}")
 
 _feed = {"items": None, "me": None, "at": None, "error": None, "since": None, "read": 0, "team": None}
@@ -88,12 +90,26 @@ def _names(me):
                                    str(me.get("email") or "").split("@")[0]) if n}
 
 
+def _asks(body, names):
+    """A comment that mentions you and says review ("In review by @kl", "@kl can you review this?"),
+    without a `review:` line: its priority word, if it has one."""
+    if REVIEW.search(body) or not ASKS.search(body):
+        return None
+    if not any(next(g for g in m.groups() if g).casefold() in names for m in MENTION.finditer(body)):
+        return None
+    return next((LEVEL[w] for w in re.findall(r"[a-z0-9]+", body.lower()) if w in LEVEL), 3)
+
+
 def reviews(comments, me):
     """The reviews you're asked for: {issue id: (comment, level 1-4)}, from the latest `review:` line
-    about you on each issue; one that says done or drop takes the issue off."""
+    about you on each issue, or a comment that mentions you and says review; a `review:` line that says
+    done or drop takes the issue off. Your own comments ask nothing."""
     names, out = _names(me), {}
     for c in sorted((c for c in comments if isinstance(c, dict) and c.get("issue")), key=lambda c: c.get("createdAt") or ""):
-        for line in REVIEW.findall(str(c.get("body") or "")):
+        body = str(c.get("body") or "")
+        if str((c.get("user") or {}).get("displayName") or "").casefold() not in names and (level := _asks(body, names)):
+            out[c["issue"]["id"]] = (c, level)
+        for line in REVIEW.findall(body):
             for part in re.split(r"[,;]", line):
                 m = MENTION.search(part)
                 if not m or next(g for g in m.groups() if g).casefold() not in names:
@@ -135,8 +151,9 @@ def items(data):
     for i in (me.get("assignedIssues") or {}).get("nodes") or []:
         out[i["id"]] = item(i, "assignee", i.get("priority"))
     for iid, (c, level) in reviews((data.get("comments") or {}).get("nodes") or [], me).items():
-        if iid not in out and (c["issue"].get("state") or {}).get("type") not in ("completed", "canceled"):
-            out[iid] = item(c["issue"], "reviewer", level, c)
+        if iid not in out and (c["issue"].get("state") or {}).get("type") not in OVER:
+            x = out[iid] = item(c["issue"], "reviewer", level, c)
+            x["prs"] += [u for u in dict.fromkeys(PR.findall(str(c.get("body") or ""))) if u not in x["prs"]]  # the PR the ask links
     return sorted(out.values(), key=lambda x: (x["level"], x["sort"]))
 
 

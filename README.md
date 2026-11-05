@@ -138,8 +138,10 @@ minutes on its own, without Claude, and the **Work** tab lists:
 - **The reviews you're asked for**, in a comment on someone's issue: a line `review: @you`, with a
   priority if it needs one (`review: @kl high, @valera`). Priorities are urgent, high, medium (the
   default) and low, or P0–P3. A later `review: @you done` (or `drop`) takes it off, and the latest
-  such line about you on an issue counts. `@you` is your Linear display name, first name, name or
-  email's name, typed or as Linear's mention.
+  such line about you on an issue counts. A comment that mentions you and says review ("In review by
+  @kl", "@kl can you review #397?") asks too, and a PR it links is the review's PR. `@you` is your
+  Linear display name, first name, name or email's name. Your own comments ask nothing, and an issue
+  that's done, cancelled or a duplicate asks nothing of anyone.
 
 They come in Linear's order: priority, then the manual order you give them in Linear. Linear's urgent
 and high are P0 and P1 here, until you change the priority yourself.

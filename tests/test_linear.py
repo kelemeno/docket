@@ -44,6 +44,23 @@ class Reviews(unittest.TestCase):
             self.assertIn(i["id"], linear.reviews([comment(body, i)], ME), body)
         self.assertEqual(linear.reviews([comment("review: @valera high", i), comment("@kl see above", i)], ME), {})
 
+    def test_a_mention_that_says_review_asks_too_as_linear_writes_it(self):
+        i = issue("EVM-1")
+        for body in ("In review by @kl", "@kl can you review this before the OZ handoff?", "@Kalman please review, high"):
+            self.assertIn(i["id"], linear.reviews([comment(body, i)], ME), body)
+        self.assertEqual(linear.reviews([comment("@kl review, high", i)], ME)[i["id"]][1], 2)
+        for body in ("@kl wdyt?", "this is what being done in @kl branch", "In review by @valera"):
+            self.assertEqual(linear.reviews([comment(body, i)], ME), {}, body)
+        mine = {**comment("@kl note to self: review later", i), "user": {"name": "Kalman Lajko", "displayName": "kl"}}
+        self.assertEqual(linear.reviews([mine], ME), {}, "your own comment asks nothing")
+
+    def test_the_pr_an_ask_links_is_the_reviews_pr_and_a_duplicate_asks_nothing(self):
+        i = issue("EVM-2")
+        out = linear.items(data(comments=[comment(f"@kl review please: {PR1}", i)]))
+        self.assertEqual(out[0]["prs"], [PR1])
+        dup = issue("EVM-3", state="Duplicate", kind="duplicate")
+        self.assertEqual(linear.items(data(comments=[comment("review: @kl", dup)])), [])
+
     def test_the_latest_line_counts_and_done_takes_it_off(self):
         i = issue("EVM-1")
         first, later = comment("review: @kl low", i, "2026-03-01T10:00:00Z"), comment("review: @kl high", i, "2026-03-01T11:00:00Z")
