@@ -102,12 +102,12 @@ def _asks(body, names):
 
 def reviews(comments, me):
     """The reviews you're asked for: {issue id: (comment, level 1-4)}, from the latest `review:` line
-    about you on each issue, or a comment that mentions you and says review; a `review:` line that says
-    done or drop takes the issue off. Your own comments ask nothing."""
+    about you on each issue, or a comment that mentions you and says review (yours too: "In review by
+    @kl" is you taking it); a `review:` line that says done or drop takes the issue off."""
     names, out = _names(me), {}
     for c in sorted((c for c in comments if isinstance(c, dict) and c.get("issue")), key=lambda c: c.get("createdAt") or ""):
         body = str(c.get("body") or "")
-        if str((c.get("user") or {}).get("displayName") or "").casefold() not in names and (level := _asks(body, names)):
+        if level := _asks(body, names):
             out[c["issue"]["id"]] = (c, level)
         for line in REVIEW.findall(body):
             for part in re.split(r"[,;]", line):

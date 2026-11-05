@@ -51,8 +51,8 @@ class Reviews(unittest.TestCase):
         self.assertEqual(linear.reviews([comment("@kl review, high", i)], ME)[i["id"]][1], 2)
         for body in ("@kl wdyt?", "this is what being done in @kl branch", "In review by @valera"):
             self.assertEqual(linear.reviews([comment(body, i)], ME), {}, body)
-        mine = {**comment("@kl note to self: review later", i), "user": {"name": "Kalman Lajko", "displayName": "kl"}}
-        self.assertEqual(linear.reviews([mine], ME), {}, "your own comment asks nothing")
+        mine = {**comment("In review by @kl: " + PR1, i), "user": {"name": "Kalman Lajko", "displayName": "kl"}}
+        self.assertIn(i["id"], linear.reviews([mine], ME), "you taking the review counts")
 
     def test_the_pr_an_ask_links_is_the_reviews_pr_and_a_duplicate_asks_nothing(self):
         i = issue("EVM-2")
