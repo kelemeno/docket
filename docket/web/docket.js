@@ -58,8 +58,8 @@
           <select aria-label="Kind"><option value="quick">Quick</option><option value="deep">Deep work</option></select>
         </form>` : ""}
         ${LISTS.map((l) => `<section class="card"><h2>${esc(l.title)} <span class="count" data-n="${esc(l.key)}"></span></h2><div data-list="${esc(l.key)}"${Q ? " data-q" : ""}></div></section>`).join("")}
-        ${src.actions.includes("waiting") ? `<details class="card"><summary>Waiting on others <span class="count" data-n="waiting"></span></summary><div data-list="waiting"></div></details>` : ""}
-        <details class="card"><summary>Later <span class="count" data-n="later"></span></summary><div data-list="later"></div></details>
+        ${src.actions.includes("waiting") && !Q ? `<details class="card"><summary>Waiting on others <span class="count" data-n="waiting"></span></summary><div data-list="waiting"></div></details>` : ""}
+        ${Q ? "" : `<details class="card"><summary>Later <span class="count" data-n="later"></span></summary><div data-list="later"></div></details>`}
         <details class="card"><summary>Handled today <span class="count" data-n="handled"></span></summary><div data-list="handled"></div></details>
         <p class="meta">Keys: <kbd>j</kbd><kbd>k</kbd> move · ${Q ? "<kbd>space</kbd> open · <kbd>J</kbd><kbd>K</kbd> reorder · " : ""}${src.actions.filter((a) => KEYS[a]).map((a) => `<kbd>${KEYS[a]}</kbd> ${NAMES[a].replace("★ ", "").toLowerCase()}`).join(" · ")}
           ${src.reply ? "· <kbd>c</kbd> reply" : ""} · <kbd>u</kbd> undo · <kbd>n</kbd> new task${src.refresh ? " · <kbd>r</kbd> refresh" : ""}</p>
@@ -85,10 +85,12 @@
       const tasks = (data.tasks || []).filter(show);
       const open = tasks.filter((t) => t.status === "open" && due(t)).sort(rank);
       const waiting = tasks.filter((t) => t.status === "waiting").sort(rank);
+      const later = tasks.filter((t) => t.status === "open" && !due(t));
       return {
-        open, lists: Q ? queued([...open, ...waiting].sort(rank)) : Object.fromEntries(LISTS.map((l) => [l.key, l.pick(open)])),
+        // a queue has them all in one list: waiting and later ones greyed in their place
+        open, lists: Q ? queued([...open, ...waiting, ...later].sort(rank)) : Object.fromEntries(LISTS.map((l) => [l.key, l.pick(open)])),
         waiting: Q ? [] : waiting,
-        later: tasks.filter((t) => t.status === "open" && !due(t)).sort((a, b) => (a.until || a.do).localeCompare(b.until || b.do) || rank(a, b)),
+        later: Q ? [] : later.sort((a, b) => (a.until || a.do).localeCompare(b.until || b.do) || rank(a, b)),
         handled: tasks.filter((t) => (t.status === "done" || t.status === "dropped") && String(t.done_at || "").startsWith(data.today)),
       };
     }
@@ -155,7 +157,8 @@
         // a queue's dividers: what's to sort above, your order below (dropping on it puts a task first)
         if (t.sep) return `<div class="qsep${t.sep === "order" ? " drop" : ""}"${t.sep === "order" ? " data-sep" : ""}>${esc(t.title)} <span class="count">${t.n || ""}</span>${t.hint ? ` <span class="meta">${esc(t.hint)}</span>` : ""}</div>`;
         const s0 = (t.sources || [])[0];
-        const sub = opts.queue ? [more(t, "row"), t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "", t.status === "waiting" ? "waiting on others" : ""].filter(Boolean).join(" · ")
+        const sub = opts.queue ? [more(t, "row"), t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "", t.status === "waiting" ? "waiting on others" : "",
+                                  t.status === "open" && !due(t) ? (t.until && t.until.startsWith(data.today) ? "until " + esc(t.until.slice(11)) : "from " + esc(day(t.do))) : ""].filter(Boolean).join(" · ")
           : [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
                      t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "",
                      opts.closed ? (t.status === "dropped" ? "dropped" : t.closed_by === "claude" ? "done: " + esc(t.evidence) : "done") : "", more(t, "row")]
@@ -164,7 +167,7 @@
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`
           : opts.unsorted && opts.unsorted.has(t.id) ? `<button data-row="top" title="First in your order">To top</button><button data-row="end" title="Last in your order">To end</button>`
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
-        const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && t.status === "waiting" ? " blocked" : "") + (opts.unsorted?.has(t.id) ? " tosort" : "")
+        const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && (t.status === "waiting" || !due(t)) ? " blocked" : "") + (opts.unsorted?.has(t.id) ? " tosort" : "")
           + (t === next ? " next" : "") + (opts.queue && t.id === opened ? " opened" : "");
         return `<div class="row${cls}" data-id="${esc(t.id)}">${opts.queue ? `<span class="grip" title="Drag to reorder (or Shift+J / Shift+K)">⠿</span>` : ""}${pri(t)}
           <div class="body"><div class="t">${t === next ? `<span class="nextmark">next</span>` : ""}${esc(t.title)}</div>${subline ? `<div class="s">${subline}</div>` : ""}</div>
@@ -180,7 +183,7 @@
         put(box, rows(list, opts)); el.querySelector(`[data-n="${k}"]`).textContent = list.filter((t) => !t.sep).length || "";
       };
       // in a queue, next is the first you can act on in your order, else in what's to sort
-      const next = Q && (g.lists.queue.find((t) => t.status === "open") || g.lists.unsorted.find((t) => t.status === "open"));
+      const next = Q && (g.lists.queue.find((t) => t.status === "open" && due(t)) || g.lists.unsorted.find((t) => t.status === "open" && due(t)));
       // a queue with tasks to sort shows them first, then your order, in one list with a divider between
       const shownQueue = Q && g.lists.unsorted.length
         ? [{ sep: "sort", title: Q.unsortedTitle || "To sort", n: g.lists.unsorted.length }, ...g.lists.unsorted,
