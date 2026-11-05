@@ -124,6 +124,17 @@ class Notes(unittest.TestCase):
             self.assertEqual("You can only read" in ask.call_args[0][0], not act)
 
 
+class Kind(unittest.TestCase):
+    def test_moving_a_task_to_work_is_yours_and_the_refresh_leaves_it(self):
+        t = task()
+        reg = {"tasks": [t]}
+        tasks.save(reg)
+        tasks.act(t["id"], "kind", "deep", DAY, NOW)
+        reg = tasks.load()
+        tasks.merge(reg, {"updates": [{"id": t["id"], "kind": "quick"}]}, DAY, NOW)
+        self.assertEqual((reg["tasks"][0]["kind"], reg["tasks"][0]["mine"]), ("deep", ["kind"]))
+
+
 class Snooze(unittest.TestCase):
     def setUp(self):
         self.t = task()

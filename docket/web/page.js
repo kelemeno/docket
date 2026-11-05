@@ -162,9 +162,11 @@ window.docketPage = function (el, opts = {}) {
     };
   }
   async function act(t, action, value) {
+    if (action === "work" || action === "triage") return post("/task", { id: t.id, action: "kind", value: action === "work" ? "deep" : "quick" });
     if (action !== "restore") return post("/task", { id: t.id, action, value });
-    // undo: back to the status and day it had before
-    const today = views.triage.data.today;
+    // undo: back to the view, or the status and day, it had before
+    const today = views.triage.data.today, cur = (views.triage.data.tasks || []).find((x) => x.id === t.id);
+    if (cur && cur.kind !== value.kind && cur.status === value.status) return post("/task", { id: t.id, action: "kind", value: value.kind });
     if (value.status === "waiting") return post("/task", { id: t.id, action: "waiting" });
     const reopened = await post("/task", { id: t.id, action: "reopen" });
     const now = reopened.tasks.find((x) => x.id === t.id);
@@ -185,6 +187,8 @@ window.docketPage = function (el, opts = {}) {
   }
   views.triage = docket(box("triage"), {
     ...base("triage"), show: triage,
+    actions: [...base("triage").actions, "work"],
+    can: (t, a) => a !== "work" || !t.aag,  // your agent's go to Work only with their issue
     lists: [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => !t.aag) },
             { key: "agent", title: "Your agent", empty: "Your agent needs nothing from you.", pick: (l) => l.filter((t) => t.aag) }],
     add: (text, kind) => both("triage", post("/task", { action: "add", value: text, kind })),
@@ -193,6 +197,8 @@ window.docketPage = function (el, opts = {}) {
   });
   views.work = docket(box("work"), {
     ...base("work"), show: work,
+    actions: [...base("work").actions, "triage"],
+    can: (t, a) => a !== "triage" || (!t.linear && !t.issue),  // an issue's work stays with the issue
     lists: [{ key: "issues", title: "Linear issues", empty: "Nothing on Linear needs you now.", pick: (l) => l.filter((t) => t.linear || t.issue) },
             { key: "loose", title: "Not on Linear", empty: "All the work here belongs to an issue.", pick: (l) => l.filter((t) => !t.linear && !t.issue) }],
     rank: (a, b, d) => { const x = level(d, a), y = level(d, b); return x[0] - y[0] || x[1] - y[1]; },

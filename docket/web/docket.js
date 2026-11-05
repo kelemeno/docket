@@ -13,7 +13,9 @@
 //     assistant: "Claude"                 what the reply box and notes call the one answering
 //     reply(task, text): data             optional: a note to Claude about the task; task.notes [{at, by
 //                         you|claude, text}] show on the card, task.asked while the answer is coming
-//     actions: ["done", "snooze", "waiting", "drop", "open", "star"]   the buttons this source has
+//     actions: ["done", "snooze", "waiting", "drop", "open", "star"]   the buttons this source has; and
+//                         "work" / "triage" for a page with those two views (act gets them as they are)
+//     can(task, action): bool         optional: a button this task doesn't get
 //     side(data): html    the side panel;  sideClick(event, data): data or undefined
 //     empty(data): html   Now when there's nothing to do;  foot(data): text under the side panel
 //     show(task, data): bool          optional: the tasks this view has (a page with several views)
@@ -26,9 +28,11 @@
   const PRI = ["P0", "P1", "P2"];
   const day = (d) => new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const link = (s) => s.link ? `<a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.label)} ↗</a>` : esc(s.label);
-  const LABEL = { done: "Done", drop: "Dropped", waiting: "Waiting on others", snooze: "Snoozed", star: "Starred" };
-  const KEYS = { done: "d", snooze: "s", waiting: "w", drop: "x", open: "o", star: "t" };
-  const NAMES = { done: "Done", snooze: "Snooze", waiting: "Waiting", drop: "Drop", open: "Open", star: "★ Today" };
+  const LABEL = { done: "Done", drop: "Dropped", waiting: "Waiting on others", snooze: "Snoozed", star: "Starred",
+                  work: "Moved to Work", triage: "Moved to Triage" };
+  const KEYS = { done: "d", snooze: "s", waiting: "w", drop: "x", open: "o", star: "t", work: "m", triage: "m" };
+  const NAMES = { done: "Done", snooze: "Snooze", waiting: "Waiting", drop: "Drop", open: "Open", star: "★ Today",
+                  work: "→ Work", triage: "→ Triage" };
 
   window.docket = function (el, src) {
     const ai = src.assistant || "Claude";
@@ -36,6 +40,9 @@
                                 { key: "deep", title: "Deep work", empty: "No deep work for today.", pick: (l) => l.filter((t) => t.kind !== "quick") }];
     const show = (t) => !src.show || src.show(t, data);
     const more = (t, where) => src.more ? src.more(t, data, where) || "" : "";
+    // on the screen: its first box, since a page may lay el out with display: contents (no box of its own)
+    const onScreen = () => !!(el.firstElementChild && el.firstElementChild.offsetParent);
+    const can = (t, a) => src.actions.includes(a) && (!src.can || src.can(t, a));
     el.innerHTML = `
       <main>
         <section class="card now" data-part="now"></section>
@@ -103,7 +110,7 @@
             typing = box && document.activeElement === box;
       if (!t) { sel = null; put(part("now"), `<h2>Now</h2>${src.empty(data)}`); return; }
       sel = t.id;
-      const btn = (a) => a === "open" && !(t.sources || []).some((s) => s.link) ? ""
+      const btn = (a) => !can(t, a) || a === "open" && !(t.sources || []).some((s) => s.link) ? ""
         : `<button data-a="${a}"${a === "done" ? ' class="primary"' : ""}>${a === "star" && t.star ? "Unstar" : NAMES[a]}<kbd>${KEYS[a]}</kbd></button>`;
       const ses = (t.sessions || []).map((s) => `<span class="chip">⌁ ${esc(s)}</span>`).join("");
       if (!put(part("now"), `<h2>Now</h2>
@@ -174,7 +181,7 @@
       return d.toLocaleDateString("sv");
     }
     function nowAction(a) {
-      const t = current(); if (!t || !src.actions.includes(a)) return;
+      const t = current(); if (!t || !can(t, a)) return;
       if (a === "open") { const s = (t.sources || []).find((x) => x.link); if (s) window.open(s.link, "_blank", "noopener"); return; }
       if (a === "snooze") { part("snooze")?.classList.toggle("hidden"); return; }
       act(t, a, null, a === "star" ? null : LABEL[a]);
@@ -215,7 +222,7 @@
     });
     if (src.add) part("add").addEventListener("keydown", (e) => { if (e.key === "Escape") e.target.blur(); });
     document.addEventListener("keydown", (e) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || !data || !el.offsetParent) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || !data || !onScreen()) return;
       const g = groups(), list = LISTS.flatMap((l) => g.lists[l.key]), i = list.findIndex((t) => t.id === sel), k = e.key;
       const action = Object.keys(KEYS).find((a) => KEYS[a] === k && src.actions.includes(a));
       if (k === "j" || k === "k") { const n = list[Math.max(0, Math.min(list.length - 1, i + (k === "j" ? 1 : -1)))]; if (n) { sel = n.id; render(); } }

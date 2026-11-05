@@ -23,7 +23,8 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   says to send something ("text Sam that it's merged", "comment on the PR that CI is fixed"), Claude
   sends it as you and says where. The refresh reads your notes too.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
-  **Waiting** (on someone else), **Drop**, **Open** the source, **Undo**.
+  **Waiting** (on someone else), **Drop**, **Open** the source, **→ Work** / **→ Triage** (`m`: real
+  work or not; the refresh leaves your choice alone), **Undo**.
 - **Two tabs** (`1`, `2`). **Triage** is the back-and-forth for today, P0 first: **Quick** (under 10
   minutes) and **Your agent**, its asks. **Work** is real work, one task per Linear issue, in Linear's order, and
   the deep work that isn't on Linear yet ([below](#work-linear)). In both, **Waiting**, **Later** and
