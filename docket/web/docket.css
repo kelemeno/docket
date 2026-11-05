@@ -123,3 +123,20 @@ details.card[open] > summary { margin-bottom: 10px; }
 .views { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; } .views .meta { margin: 0; }
 [data-view-el]:not([hidden]) { display: contents; }  /* a view's main and aside sit in the page's grid */
 .viewtabs button { padding: 5px 16px; }
+/* the day as a grid (page.js): hours down the side, meetings and the plan's blocks where they fall */
+.day { position: relative; margin: 8px 0 4px 40px; }
+.day .hr { position: absolute; left: -40px; right: 0; border-top: 1px solid var(--border); }
+.day .hr span { position: absolute; top: -8px; left: 0; font-size: 11px; color: var(--muted); background: var(--surface);
+  padding-right: 4px; font-variant-numeric: tabular-nums; }
+.day .blk { position: absolute; border-radius: 6px; padding: 1px 6px; font-size: 12px; line-height: 1.35; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--muted); }
+.day .blk .tm { color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.day .blk.past { opacity: .5; }
+.day .blk.plan { cursor: pointer; border-style: dashed; border-left-style: solid; background: var(--surface); }
+.day .blk.plan.work { border-left-color: var(--accent); }
+.day .blk.plan.triage { border-left-color: var(--warn); }
+.day .blk.plan:hover { background: var(--sel); }
+.day .blk .join { float: right; margin-left: 4px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.day .nowat { position: absolute; left: -6px; right: 0; border-top: 2px solid var(--critical); z-index: 1; }
+.day .nowat::before { content: ""; position: absolute; left: 0; top: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--critical); }
+.day .blk.short { white-space: nowrap; text-overflow: ellipsis; }

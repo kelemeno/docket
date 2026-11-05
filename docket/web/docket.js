@@ -23,7 +23,7 @@
 //                         Quick and Deep work (Waiting, Later and Handled stay)
 //     rank(a, b, data): number        optional: comes before the usual order (★, priority, slips, age)
 //     more(task, data, where): html   optional: more on a task, where "now" (its card) or "row"
-//   })  →  {reload(), render(), data}
+//   })  →  {reload(), render(), select(task id), data}
 (() => {
   const PRI = ["P0", "P1", "P2"];
   const day = (d) => new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -252,6 +252,6 @@
       }
       render();
     }
-    return { reload, render, get data() { return data; } };
+    return { reload, render, select(id) { sel = id; render(); }, get data() { return data; } };
   };
 })();

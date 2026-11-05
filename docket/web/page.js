@@ -21,20 +21,76 @@ window.docketPage = function (el, opts = {}) {
     return out;
   }
   const minutes = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
-  function meetings(data) {
-    const items = data.meetings || [], now = new Date().toTimeString().slice(0, 5);
-    if (!items.length) return `<p class="empty">${data.refreshed ? "No meetings today." : "Meetings come with the first refresh."}</p>`;
-    let html = "", placed = false, prevEnd = null;
-    for (const m of items) {
-      if (prevEnd && m.start > now && minutes(m.start) - minutes(prevEnd < now ? now : prevEnd) >= 30) {
-        if (!placed && prevEnd <= now) { html += `<div class="nowline"></div>`; placed = true; }
-        html += `<div class="ev free"><span class="tm">${esc(prevEnd < now ? now : prevEnd)}–${esc(m.start)}</span><span>free</span></div>`;
-      }
-      if (!placed && m.start > now) { html += `<div class="nowline"></div>`; placed = true; }
-      html += `<div class="ev ${m.end <= now ? "past" : m.start <= now ? "cur" : ""}"><span class="tm">${esc(m.start)}–${esc(m.end)}</span><span>${esc(m.title)}</span></div>`;
-      prevEnd = prevEnd && prevEnd > m.end ? prevEnd : m.end;
+  const hhmm = (m) => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+  // Your open work in today's free time, from now to the end of your hours (settings "hours"): Work
+  // first, in its order, up to 90 minutes a task; your quick ones batched, 10 minutes each, in the gaps
+  // too short for deep work. Worked out again on every load, so it follows the day as it goes.
+  const PRI = ["P0", "P1", "P2"];
+  const pri = (t) => (t.star ? -1 : 0) + ((PRI.indexOf(t.priority) + 4) % 4);
+  function plan(d) {
+    const [from, to] = String(d.hours || "09:00-18:00").split("-").map((x) => minutes(x.trim()));
+    const n = new Date(), now = Math.ceil((n.getHours() * 60 + n.getMinutes()) / 5) * 5;
+    const busy = (d.meetings || []).map((m) => [minutes(m.start), minutes(m.end)]).sort((a, b) => a[0] - b[0]);
+    const gaps = [];
+    let at = Math.max(from, now);
+    for (const [s, e] of [...busy, [to, to]]) {
+      if (Math.min(s, to) - at >= 15) gaps.push([at, Math.min(s, to)]);
+      at = Math.max(at, e);
     }
-    return html + (placed ? "" : `<div class="nowline"></div>`);
+    const open = (d.tasks || []).filter((t) => due(d, t));
+    const deep = open.filter(work).sort((a, b) => level(d, a)[0] - level(d, b)[0] || level(d, a)[1] - level(d, b)[1] || pri(a) - pri(b));
+    const quick = open.filter(triage).sort((a, b) => pri(a) - pri(b));
+    const out = [];
+    for (let [s, e] of gaps) {
+      while (e - s >= 15 && (deep.length || quick.length)) {
+        if (deep.length && (e - s >= 45 || !quick.length && e - s >= 30)) {
+          const len = e - s - 90 < 15 ? e - s : 90, t = deep.shift();
+          out.push({ start: s, end: s + len, view: "work", tasks: [t] }); s += len;
+        } else if (quick.length) {
+          const k = Math.max(1, Math.min(quick.length, Math.floor(Math.min(e - s, 30) / 10)));
+          out.push({ start: s, end: s + k * 10, view: "triage", tasks: quick.splice(0, k) }); s += k * 10;
+        } else break;
+      }
+    }
+    return { blocks: out, left: deep.length + quick.length, from, to };
+  }
+  // The day as a grid: meetings where they are (side by side when they overlap), with their call
+  // links, and the plan's blocks dashed; a click on one shows its task.
+  const HOUR = 52;
+  function meetings(data) {
+    if (!(data.meetings || []).length && !data.refreshed) return `<p class="empty">Meetings come with the first refresh.</p>`;
+    const p = plan(data), n = new Date(), now = n.getHours() * 60 + n.getMinutes();
+    const items = [...(data.meetings || []).map((m) => ({ ...m, s: minutes(m.start), e: Math.max(minutes(m.end), minutes(m.start) + 15) })),
+                   ...p.blocks.map((b) => ({ ...b, s: b.start, e: b.end }))].sort((a, b) => a.s - b.s || b.e - a.e);
+    const top = Math.floor(Math.min(p.from, ...items.map((x) => x.s)) / 60), end = Math.ceil(Math.max(p.to, ...items.map((x) => x.e)) / 60);
+    const y = (m) => (m - top * 60) * HOUR / 60;
+    // columns: within each run of overlapping items, the first free column, all as wide as the run needs
+    let run = [], runEnd = -1;
+    const close = () => { const cols = Math.max(...run.map((x) => x.col)) + 1; run.forEach((x) => { x.cols = cols; }); run = []; };
+    for (const x of items) {
+      if (x.s >= runEnd && run.length) close();
+      const used = new Set(run.filter((o) => o.e > x.s).map((o) => o.col));
+      x.col = 0; while (used.has(x.col)) x.col++;
+      run.push(x); runEnd = Math.max(runEnd, x.e);
+    }
+    if (run.length) close();
+    let html = "";
+    for (let h = top; h <= end; h++) html += `<div class="hr" style="top:${y(h * 60)}px"><span>${hhmm(h * 60)}</span></div>`;
+    for (const x of items) {
+      const short = x.e - x.s < 35 ? " short" : "";
+      const box = `top:${y(x.s)}px;height:${Math.max(18, y(x.e) - y(x.s) - 2)}px;left:${x.col * 100 / x.cols}%;width:calc(${100 / x.cols}% - 3px)`;
+      const tm = `<span class="tm">${hhmm(x.s)}–${hhmm(x.e)}</span>`;
+      if (x.tasks) {
+        const t = x.tasks[0], title = x.tasks.length > 1 ? `Triage · ${x.tasks.length} quick` : t.title;
+        html += `<div class="blk plan ${x.view}${short}" style="${box}" data-task="${esc(t.id)}" data-view="${x.view}" title="${esc(x.tasks.map((o) => o.title).join("\n"))}">${esc(title)} ${tm}</div>`;
+      } else {
+        html += `<div class="blk${short}${x.e <= now ? " past" : ""}" style="${box}">${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener" class="join">Join ↗</a>` : ""}${esc(x.title)} ${tm}</div>`;
+      }
+    }
+    if (now >= top * 60 && now <= end * 60) html += `<div class="nowat" style="top:${y(now)}px"></div>`;
+    const left = p.left ? `<p class="meta">${p.left} more open task${p.left === 1 ? "" : "s"} don't fit before ${hhmm(p.to)}.</p>` : "";
+    return `<div class="day" style="height:${y(end * 60) + 8}px">${html}</div>`
+      + ((data.meetings || []).length ? "" : `<p class="meta">No meetings today.</p>`) + left;
   }
   function ago(at) {
     const s = Date.now() / 1000 - at;
@@ -153,6 +209,8 @@ window.docketPage = function (el, opts = {}) {
       refresh: () => opts.run && opts.run.click(),
       side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? `<section class="card"><h2>Your agent <span class="count">${((d.aag.feed || {}).tasks || []).filter((t) => t.column === "needs_you").length || ""}</span></h2>${agent(d)}</section>` : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section><section class="card"><h2>Claude sessions</h2>${sessions(d)}</section>`,
       sideClick(e, d) {
+        const blk = e.target.closest(".blk[data-task]");
+        if (blk && !e.target.closest("a")) { show(blk.dataset.view); views[blk.dataset.view].select(blk.dataset.task); return; }
         const b = e.target.closest("button[data-prtab]"); if (!b) return;
         prTab = b.dataset.prtab; try { localStorage.setItem("docket-pr-tab", prTab); } catch {}
         return d;

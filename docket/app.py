@@ -83,7 +83,7 @@ Closed in the last two weeks ({who} finished or dropped these; don't add them ag
 Reply with ONLY a JSON object:
 {{"new": [{{"title": "short, imperative: what {who} has to do", "next": "the very next step", "why": "one line: who's waiting, or the deadline", "who": "the person waiting, or empty", "kind": "quick or deep", "priority": "P0, P1 or P2", "do": "YYYY-MM-DD", "status": "open or waiting", "sources": [{{"label": "slack DM with X / github repo#123 / email from Y", "link": "https://… or empty"}}], "sessions": ["exact titles of sessions above that work on this"]}}],
   "updates": [{{"id": "…", "status": "open, waiting or done", "evidence": "for done: the link or one line that shows it's done", "next": "…", "why": "…", "priority": "…", "do": "…", "sources": [], "sessions": []}}],
-  "meetings": [{{"start": "the start exactly as the calendar gives it, with its Z or offset, e.g. 2026-03-02T14:20:00Z", "end": "the same for the end", "title": "…"}}]}}
+  "meetings": [{{"start": "the start exactly as the calendar gives it, with its Z or offset, e.g. 2026-03-02T14:20:00Z", "end": "the same for the end", "title": "…", "link": "the video call link (Meet, Zoom, Teams…) from the event, or empty"}}]}}
 
 What counts:
 - A task is something {who} has to do: a promise they made, a question to them that's unanswered, a
@@ -102,7 +102,8 @@ What counts:
   the PR or issue, the Linear issue, the email or doc. Link the original message or thread, not a
   digest, bot summary or brief that mentions it. Add a link to updates when you find a better one.
 - meetings: all of today's meetings from the calendar. Copy the times as given; don't convert them
-  between time zones (Docket does that)."""
+  between time zones (Docket does that). The link is the call's own (hangoutLink, conferenceData, or the
+  Zoom/Meet/Teams URL in the location or description), not the event's calendar page."""
 
 REPLY = """You keep {who}'s work task list. It is {now}. {who} wrote you a note about one task on the list.
 The note is {who} telling you how things stand or what has to happen: change the task to match. If it
@@ -416,7 +417,8 @@ class Page:
         return {"today": today, "now": store.now(), "tasks": reg["tasks"],
                 "meetings": m.get("items", []) if m.get("day") == today else [],
                 "refreshed": reg.get("refreshed"), "sessions": listed, "running": self.busy.locked(),
-                "error": self.error, "folder": str(store.HOME), "prs": prs(), **STATE()}
+                "error": self.error, "folder": str(store.HOME), "prs": prs(),
+                "hours": store.settings().get("hours", "09:00-18:00"), **STATE()}
 
 
 def serve(port=PORT, index=None, routes=None):

@@ -47,6 +47,8 @@ def path():
 def load():
     reg = store.read(path()) or {}
     reg.setdefault("tasks", [])
+    for t in reg["tasks"]:  # lists from before one link per place
+        t["sources"] = _merge([], t.get("sources") or [])
     return reg
 
 
@@ -65,6 +67,37 @@ def _sources(items):
             link = _text(s.get("link"), 400)
             out.append({"label": _text(s.get("label"), 80) or "source",
                         "link": link if link.startswith("https://") else ""})  # the page makes these <a href>
+    return _merge([], out)
+
+
+# A Slack message as Slack links it, under any of the workspace's host names: its channel, its
+# message, and the thread it's in.
+SLACK = re.compile(r"^https://[^/]+\.slack\.com/archives/([A-Z0-9]+)/p(\d+)(?:.*[?&]thread_ts=([\d.]+))?")
+
+
+def _key(link):
+    """The same message under another host name is the same link."""
+    m = SLACK.match(link or "")
+    return f"slack:{m[1]}:{m[2]}" if m else link
+
+
+def _place(s):
+    """Where a link points: a Slack conversation (a DM, or a thread) is one place, whichever of its
+    messages is linked; anything else is its link."""
+    m = SLACK.match(s["link"] or "")
+    return f"slack:{m[1]}:{m[3] or ''}" if m else s["link"] or s["label"]
+
+
+def _merge(old, new):
+    """Sources one per place: a newer link to a place already there takes the old one's spot (and keeps
+    its label), so a DM that keeps going is one link, to its latest message."""
+    out = list(old)
+    for s in new:
+        i = next((i for i, o in enumerate(out) if _place(o) == _place(s)), None)
+        if i is None:
+            out.append(s)
+        else:
+            out[i] = {**out[i], "link": s["link"] or out[i]["link"]}
     return out
 
 
@@ -85,8 +118,8 @@ def _titles(items):
 def _duplicate(tasks, n):
     """Already on the list, open or closed: a task you dropped or finished doesn't come back as new."""
     title = n["title"].casefold()
-    links = {s["link"] for s in n["sources"] if s["link"]}
-    return any(t["title"].casefold() == title or links & {s["link"] for s in t["sources"] if s["link"]} for t in tasks)
+    links = {_key(s["link"]) for s in n["sources"] if s["link"]}
+    return any(t["title"].casefold() == title or links & {_key(s["link"]) for s in t["sources"] if s["link"]} for t in tasks)
 
 
 def meetings(items):
@@ -96,7 +129,9 @@ def meetings(items):
     for m in (items if isinstance(items, list) else [])[:20]:
         start, end = (store.local_hhmm(m.get(k)) for k in ("start", "end")) if isinstance(m, dict) else (None, None)
         if start and end:
-            out.append({"start": start, "end": end, "title": _text(m.get("title"), 160), **extra(m, None)})
+            link = str(m.get("link") or "").strip()
+            out.append({"start": start, "end": end, "title": _text(m.get("title"), 160),
+                        **({"link": link} if re.match(r"https://\S+$", link) else {}), **extra(m, None)})
     return sorted(out, key=lambda m: m["start"])
 
 
@@ -136,8 +171,7 @@ def _update(t, u, mine, today, now):
         t["priority"] = u["priority"]
     if isinstance(u.get("do"), str) and DAY.match(u["do"]) and u["do"] >= today and "do" not in mine:
         t["do"] = u["do"]
-    seen = {s["link"] or s["label"] for s in t["sources"]}
-    t["sources"] = (t["sources"] + [s for s in _sources(u.get("sources")) if (s["link"] or s["label"]) not in seen])[:6]
+    t["sources"] = _merge(t["sources"], _sources(u.get("sources")))[:6]
     t["sessions"] = list(dict.fromkeys(t.get("sessions", []) + _titles(u.get("sessions"))))[:5]
     t.update(extra(u, t))
     t["updated"] = now

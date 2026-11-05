@@ -124,6 +124,27 @@ class Notes(unittest.TestCase):
             self.assertEqual("You can only read" in ask.call_args[0][0], not act)
 
 
+class Sources(unittest.TestCase):
+    def test_one_link_per_slack_conversation_the_latest_under_the_first_label(self):
+        dm = "https://x.enterprise.slack.com/archives/C1/p100"
+        t = task(sources=[{"label": "group DM with Annie", "link": dm}])
+        reg = {"tasks": [t]}
+        tasks.merge(reg, {"updates": [{"id": t["id"], "sources": [
+            {"label": "slack group DM", "link": "https://x-workspace.slack.com/archives/C1/p100"},
+            {"label": "slack group DM again", "link": "https://x.enterprise.slack.com/archives/C1/p300"},
+            {"label": "thread in #team", "link": "https://x.slack.com/archives/C2/p5?thread_ts=4.0"},
+            {"label": "another reply", "link": "https://x.slack.com/archives/C2/p6?thread_ts=4.0"},
+            {"label": "the PR", "link": "https://github.com/o/r/pull/1"}]}]}, DAY, NOW)
+        self.assertEqual([(s["label"], s["link"].rsplit("/", 1)[-1]) for s in t["sources"]],
+                         [("group DM with Annie", "p300"), ("thread in #team", "p6?thread_ts=4.0"), ("the PR", "1")])
+
+    def test_the_same_message_under_another_host_is_a_duplicate(self):
+        t = task(sources=[{"label": "dm", "link": "https://x.enterprise.slack.com/archives/C1/p100"}])
+        reg = {"tasks": [t]}
+        tasks.merge(reg, {"new": [{"title": "Something else", "sources": [{"label": "dm", "link": "https://x-workspace.slack.com/archives/C1/p100"}]}]}, DAY, NOW)
+        self.assertEqual(len(reg["tasks"]), 1)
+
+
 class Kind(unittest.TestCase):
     def test_moving_a_task_to_work_is_yours_and_the_refresh_leaves_it(self):
         t = task()
@@ -292,6 +313,11 @@ class Hooks(unittest.TestCase):
                 self.assertEqual(store.settings()["who"], "Sam")
         finally:
             store.HOME, store.SETTINGS = home, settings
+
+    def test_a_meeting_keeps_its_call_link_and_only_a_web_one(self):
+        m = tasks.meetings([{"start": "09:00", "end": "09:30", "title": "Sync", "link": "https://meet.google.com/abc-defg-hij"},
+                            {"start": "10:00", "end": "10:30", "title": "1:1", "link": "javascript:alert(1)"}])
+        self.assertEqual([x.get("link") for x in m], ["https://meet.google.com/abc-defg-hij", None])
 
     def test_fields_of_its_own_on_tasks_and_meetings(self):
         def share(item, current):

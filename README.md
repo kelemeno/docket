@@ -22,6 +22,10 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   links it, rewrites the next step and answers under your note, usually in about a minute. If the note
   says to send something ("text Sam that it's merged", "comment on the PR that CI is fixed"), Claude
   sends it as you and says where. The refresh reads your notes too.
+- **Today** on the side is your day as a grid: meetings where they fall, with a **Join** link for calls,
+  and your open work fitted into the free time from now to the end of your `hours`. Work comes first,
+  in its order, up to 90 minutes a task, and quick tasks are batched in the short gaps. Click a block to
+  open its task. The plan is worked out again as the day goes.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
   **Waiting** (on someone else), **Drop**, **Open** the source, **→ Work** / **→ Triage** (`m`: real
   work or not; the refresh leaves your choice alone), **Undo**.
@@ -71,6 +75,7 @@ The folder is `$DOCKET_HOME`, or `~/.local/share/docket` by default. In it, `set
 |---|---|
 | `tools` / `refused` | the tools Claude may use, and the ones it may not; filled in by `docket setup` |
 | `who` | your first name, as the prompts call you |
+| `hours` | your working hours for the day's plan (default `"09:00-18:00"`) |
 | `act` | `false` keeps your notes read-only too: Claude makes what to send your next step instead of sending it |
 | `every_min` | minutes between refreshes (default 15; each is a Claude run, so fewer use less of your plan) |
 | `model` | the Claude model for refreshes and replies (default `sonnet`) |
