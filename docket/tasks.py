@@ -32,6 +32,7 @@ MOMENT = re.compile(r"^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$")
 KEEP_CLOSED_DAYS = 14
 TEXT = {"title": 160, "next": 240, "why": 240, "who": 80}
 KEEP_NOTES = 12
+ESTIMATES = {"15", "30", "60", "120", "240"}
 
 
 def extra(item, current):
@@ -239,6 +240,11 @@ def act(task_id, action, value, today, now):
             reg["order"] = list(dict.fromkeys(i for i in value if i in ids))[:200]
             save(reg)
             return reg
+        elif action == "est":  # how long you think it takes, in minutes (the day's plan sizes it so)
+            if str(value) not in ESTIMATES:
+                raise ValueError("bad estimate")
+            t["est"] = int(value)
+            mine.add("est")
         elif action in ("priority", "kind"):
             if value not in (PRIORITY if action == "priority" else KIND):
                 raise ValueError(f"bad {action}")

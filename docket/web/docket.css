@@ -141,3 +141,20 @@ details.card[open] > summary { margin-bottom: 10px; }
 .day .nowat::before { content: ""; position: absolute; left: 0; top: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--critical); }
 .day .blk.short { white-space: nowrap; text-overflow: ellipsis; }
 .day .blk.plan[draggable="true"] { cursor: grab; }
+/* a queue (Work): rows in your order, one open in place, dragged by the grip */
+.row .grip { flex: none; width: 14px; color: var(--muted); cursor: grab; opacity: .5; padding-top: 1px; user-select: none; }
+.row:hover .grip, .row.sel .grip { opacity: 1; }
+.row.blocked .t { color: var(--muted); }
+.row.blocked .pri { opacity: .5; }
+.nextmark { font-size: 11px; font-weight: 600; color: #fff; background: var(--accent); border-radius: 999px; padding: 1px 7px; margin-right: 6px; vertical-align: 1px; }
+.row.opened { background: var(--sel); border-radius: 6px 6px 0 0; }
+.now.detail { margin: 0 0 6px; border-radius: 0 0 10px 10px; border-top: 0; padding: 10px 14px 12px 38px; background: var(--sel); border-color: var(--border); }
+.now.detail .next { font-size: 15px; }
+.row.dragging { opacity: .4; }
+.row.dropbefore { box-shadow: inset 0 2px 0 var(--accent); }
+.row.dropafter { box-shadow: inset 0 -2px 0 var(--accent); }
+.estpick { display: flex; align-items: center; gap: 4px; margin: 0 0 10px; flex-wrap: wrap; }
+.estpick button { padding: 1px 9px; font-size: 13px; }
+.estpick button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip.newmark { border-color: var(--accent); color: var(--accent); padding: 0 6px; }
+[data-list="queue"] .row .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

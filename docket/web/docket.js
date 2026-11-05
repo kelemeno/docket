@@ -23,6 +23,10 @@
 //                         Quick and Deep work (Waiting, Later and Handled stay)
 //     rank(a, b, data): number        optional: comes before the usual order (★, priority, slips, age)
 //     more(task, data, where): html   optional: more on a task, where "now" (its card) or "row"
+//     queue: {title, empty}           optional: no Now card; one list in your order, waiting ones in it
+//                         greyed, the first you can act on marked next. A row opens in place (click,
+//                         space); drag rows or Shift+J/K to reorder, which calls order(task ids): data
+//   Buttons with data-act="action" data-value="v" in more(…, "now") call act(task, action, v).
 //   })  →  {reload(), render(), select(task id), data}
 (() => {
   const PRI = ["P0", "P1", "P2"];
@@ -36,7 +40,8 @@
 
   window.docket = function (el, src) {
     const ai = src.assistant || "Claude";
-    const LISTS = src.lists || [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => t.kind === "quick") },
+    const Q = src.queue;
+    const LISTS = Q ? [{ key: "queue", title: Q.title || "In order", empty: Q.empty || "Nothing to do." }] : src.lists || [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => t.kind === "quick") },
                                 { key: "deep", title: "Deep work", empty: "No deep work for today.", pick: (l) => l.filter((t) => t.kind !== "quick") }];
     const show = (t) => !src.show || src.show(t, data);
     const more = (t, where) => src.more ? src.more(t, data, where) || "" : "";
@@ -45,7 +50,7 @@
     const can = (t, a) => src.actions.includes(a) && (!src.can || src.can(t, a));
     el.innerHTML = `
       <main>
-        <section class="card now" data-part="now"></section>
+        ${Q ? "" : `<section class="card now" data-part="now"></section>`}
         ${src.add ? `<form class="card add" data-part="add">
           <input placeholder="Add a task and press Enter  (n)" autocomplete="off" aria-label="New task">
           <select aria-label="Kind"><option value="quick">Quick</option><option value="deep">Deep work</option></select>
@@ -54,12 +59,15 @@
         ${src.actions.includes("waiting") ? `<details class="card"><summary>Waiting on others <span class="count" data-n="waiting"></span></summary><div data-list="waiting"></div></details>` : ""}
         <details class="card"><summary>Later <span class="count" data-n="later"></span></summary><div data-list="later"></div></details>
         <details class="card"><summary>Handled today <span class="count" data-n="handled"></span></summary><div data-list="handled"></div></details>
-        <p class="meta">Keys: <kbd>j</kbd><kbd>k</kbd> move · ${src.actions.filter((a) => KEYS[a]).map((a) => `<kbd>${KEYS[a]}</kbd> ${NAMES[a].replace("★ ", "").toLowerCase()}`).join(" · ")}
+        <p class="meta">Keys: <kbd>j</kbd><kbd>k</kbd> move · ${Q ? "<kbd>space</kbd> open · <kbd>J</kbd><kbd>K</kbd> reorder · " : ""}${src.actions.filter((a) => KEYS[a]).map((a) => `<kbd>${KEYS[a]}</kbd> ${NAMES[a].replace("★ ", "").toLowerCase()}`).join(" · ")}
           ${src.reply ? "· <kbd>c</kbd> reply" : ""} · <kbd>u</kbd> undo · <kbd>n</kbd> new task${src.refresh ? " · <kbd>r</kbd> refresh" : ""}</p>
       </main>
       <aside><div data-part="side"></div><p class="meta" data-part="foot"></p></aside>`;
-    const part = (n) => el.querySelector(`[data-part="${n}"]`);
-    let data = null, sel = null, lastUndo = null, offline = false;
+    // the card: Now, or in a queue the open row's details, which move under that row
+    const nowEl = Q ? Object.assign(document.createElement("section"), { className: "card now detail" }) : el.querySelector('[data-part="now"]');
+    if (Q) nowEl.dataset.part = "now";
+    const part = (n) => n === "now" ? nowEl : el.querySelector(`[data-part="${n}"]`);
+    let data = null, sel = null, lastUndo = null, offline = false, opened = null;
 
     const stamp = (d) => d.toLocaleString("sv").slice(0, 16).replace(" ", "T");  // local YYYY-MM-DDTHH:MM
     const due = (t) => (t.do || data.today) <= data.today && !(t.until && t.until > stamp(new Date()));
@@ -69,9 +77,10 @@
     function groups() {
       const tasks = (data.tasks || []).filter(show);
       const open = tasks.filter((t) => t.status === "open" && due(t)).sort(rank);
+      const waiting = tasks.filter((t) => t.status === "waiting").sort(rank);
       return {
-        open, lists: Object.fromEntries(LISTS.map((l) => [l.key, l.pick(open)])),
-        waiting: tasks.filter((t) => t.status === "waiting").sort(rank),
+        open, lists: Q ? { queue: [...open, ...waiting].sort(rank) } : Object.fromEntries(LISTS.map((l) => [l.key, l.pick(open)])),
+        waiting: Q ? [] : waiting,
         later: tasks.filter((t) => t.status === "open" && !due(t)).sort((a, b) => (a.until || a.do).localeCompare(b.until || b.do) || rank(a, b)),
         handled: tasks.filter((t) => (t.status === "done" || t.status === "dropped") && String(t.done_at || "").startsWith(data.today)),
       };
@@ -104,7 +113,9 @@
       return true;
     }
     function renderNow(g) {
-      const t = data.tasks.find((x) => x.id === sel && (x.status === "open" || x.status === "waiting") && show(x)) || g.open[0];
+      const t = Q ? data.tasks.find((x) => x.id === opened && (x.status === "open" || x.status === "waiting") && show(x))
+        : data.tasks.find((x) => x.id === sel && (x.status === "open" || x.status === "waiting") && show(x)) || g.open[0];
+      if (Q && !t) { opened = null; nowEl.remove(); return; }
       // a reload mustn't eat a reply you're typing
       const box = part("now").querySelector(".reply input"), draft = box && box.dataset.id === (t && t.id) ? box.value : "",
             typing = box && document.activeElement === box;
@@ -113,8 +124,8 @@
       const btn = (a) => !can(t, a) || a === "open" && !(t.sources || []).some((s) => s.link) ? ""
         : `<button data-a="${a}"${a === "done" ? ' class="primary"' : ""}>${a === "star" && t.star ? "Unstar" : NAMES[a]}<kbd>${KEYS[a]}</kbd></button>`;
       const ses = (t.sessions || []).map((s) => `<span class="chip">⌁ ${esc(s)}</span>`).join("");
-      if (!put(part("now"), `<h2>Now</h2>
-        <p class="title">${esc(t.title)}</p>
+      if (!put(part("now"), `${Q ? "" : "<h2>Now</h2>"}
+        ${Q ? "" : `<p class="title">${esc(t.title)}</p>`}
         ${t.next ? `<p class="next">→ ${esc(t.next)}</p>` : ""}${t.why ? `<p class="why">${esc(t.why)}</p>` : ""}
         ${chips(t)}${more(t, "now")}
         ${(t.sources || []).length ? `<div class="links">${t.sources.map(link).join("")}</div>` : ""}
@@ -132,16 +143,21 @@
     }
     function rows(list, opts = {}) {
       if (!list.length) return `<p class="empty">${opts.empty || "Nothing."}</p>`;
+      const next = opts.queue && list.find((t) => t.status === "open");
       return list.map((t) => {
         const s0 = (t.sources || [])[0];
-        const sub = [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
+        const sub = opts.queue ? [more(t, "row"), t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "", t.status === "waiting" ? "waiting on others" : ""].filter(Boolean).join(" · ")
+          : [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
                      t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "",
                      opts.closed ? (t.status === "dropped" ? "dropped" : t.closed_by === "claude" ? "done: " + esc(t.evidence) : "done") : "", more(t, "row")]
-          .filter(Boolean).join(" · ") + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
+          .filter(Boolean).join(" · ");
+        const subline = sub + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
-        return `<div class="row${t.id === sel ? " sel" : ""}${opts.closed ? " closed" : ""}" data-id="${esc(t.id)}">${pri(t)}
-          <div class="body"><div class="t">${esc(t.title)}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div>
+        const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && t.status === "waiting" ? " blocked" : "")
+          + (t === next ? " next" : "") + (opts.queue && t.id === opened ? " opened" : "");
+        return `<div class="row${cls}" data-id="${esc(t.id)}"${opts.queue ? ' draggable="true"' : ""}>${opts.queue ? `<span class="grip" title="Drag to reorder (or Shift+J / Shift+K)">⠿</span>` : ""}${pri(t)}
+          <div class="body"><div class="t">${t === next ? `<span class="nextmark">next</span>` : ""}${esc(t.title)}</div>${subline ? `<div class="s">${subline}</div>` : ""}</div>
           <div class="quick">${quick}</div></div>`;
       }).join("");
     }
@@ -153,18 +169,19 @@
         const box = el.querySelector(`[data-list="${k}"]`); if (!box) return;
         put(box, rows(list, opts)); el.querySelector(`[data-n="${k}"]`).textContent = list.length || "";
       };
-      for (const l of LISTS) fill(l.key, g.lists[l.key], { empty: l.empty });
+      for (const l of LISTS) fill(l.key, g.lists[l.key], { empty: l.empty, queue: !!Q });
+      if (Q && opened) { const r = el.querySelector(`[data-list="queue"] .row[data-id="${CSS.escape(opened)}"]`); if (r && r.nextSibling !== nowEl) r.after(nowEl); }
       fill("waiting", g.waiting); fill("later", g.later, { later: true }); fill("handled", g.handled, { closed: true, empty: "Nothing yet." });
       put(part("side"), src.side(data));
       part("foot").textContent = src.foot ? src.foot(data) : "";
       if (src.rendered) src.rendered(data);
     }
 
-    async function act(t, action, value, label) {
+    async function act(t, action, value, label, keep) {
       const before = { ...t };
       try { data = await src.act(t, action, value); } catch (e) { return toast(e.message || "That didn't work."); }
       if (label) { lastUndo = before; toast(`${label}: ${t.title}`, true); }
-      if (sel === t.id && action !== "star") sel = null;
+      if (sel === t.id && action !== "star" && !keep) sel = null;
       render();
     }
     async function undo() {
@@ -190,6 +207,7 @@
       const b = e.target.closest("button"); if (!b) return;
       if (b.dataset.a) nowAction(b.dataset.a);
       if (b.dataset.snooze && current()) act(current(), "snooze", snoozeDay(b.dataset.snooze), "Snoozed");
+      if (b.dataset.act && current()) act(current(), b.dataset.act, b.dataset.value, null, true);
     });
     part("now").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -207,8 +225,36 @@
       if (b && b.dataset.row === "done") return act(t, "done", null, "Done");
       if (b && b.dataset.row === "snooze1") return act(t, "snooze", snoozeDay(1), "Snoozed");
       if (b && b.dataset.row === "restore") return act(t, "restore", { ...t, status: "open", done_at: null }, "Back on the list");
+      if (Q && r.closest('[data-list="queue"]')) { sel = t.id; opened = opened === t.id ? null : t.id; return render(); }
       sel = t.id; render(); scrollTo({ top: 0, behavior: "smooth" });
     });
+    // a queue's order: drag a row onto another (above its middle: before it; below: after it)
+    async function reorder(ids) {
+      try { data = await src.order(ids); } catch (e) { return toast(e.message || "That didn't work."); }
+      render();
+    }
+    let dragging = null;
+    if (Q) {
+      const box = () => el.querySelector('[data-list="queue"]');
+      el.addEventListener("dragstart", (e) => { const r = e.target.closest?.('[data-list="queue"] .row'); if (r) { dragging = r.dataset.id; e.dataTransfer.effectAllowed = "move"; r.classList.add("dragging"); } });
+      el.addEventListener("dragend", () => { dragging = null; el.querySelectorAll(".row.dragging, .row.dropbefore, .row.dropafter").forEach((r) => r.classList.remove("dragging", "dropbefore", "dropafter")); });
+      el.addEventListener("dragover", (e) => {
+        const r = dragging && e.target.closest('[data-list="queue"] .row'); if (!r) return;
+        e.preventDefault();
+        const after = e.clientY > r.getBoundingClientRect().top + r.offsetHeight / 2;
+        box().querySelectorAll(".dropbefore, .dropafter").forEach((x) => x.classList.remove("dropbefore", "dropafter"));
+        if (r.dataset.id !== dragging) r.classList.add(after ? "dropafter" : "dropbefore");
+      });
+      el.addEventListener("drop", (e) => {
+        const r = dragging && e.target.closest('[data-list="queue"] .row'); if (!r) return;
+        e.preventDefault();
+        const after = e.clientY > r.getBoundingClientRect().top + r.offsetHeight / 2, moved = dragging;
+        const ids = groups().lists.queue.map((t) => t.id).filter((i) => i !== moved);
+        const at = ids.indexOf(r.dataset.id); if (at < 0) return;
+        ids.splice(at + (after ? 1 : 0), 0, moved);
+        reorder(ids);
+      });
+    }
     part("side").addEventListener("click", async (e) => {
       if (!src.sideClick) return;
       const out = await src.sideClick(e, data);
@@ -223,15 +269,23 @@
     if (src.add) part("add").addEventListener("keydown", (e) => { if (e.key === "Escape") e.target.blur(); });
     document.addEventListener("keydown", (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || !data || !onScreen()) return;
-      const g = groups(), list = LISTS.flatMap((l) => g.lists[l.key]), i = list.findIndex((t) => t.id === sel), k = e.key;
+      const g = groups(), list = LISTS.flatMap((l) => g.lists[l.key]), i = list.findIndex((t) => t.id === sel);
+      const k = e.shiftKey && /^[jk]$/i.test(e.key) ? e.key.toUpperCase() : e.key;  // Shift+J may come as "j" with shift
       const action = Object.keys(KEYS).find((a) => KEYS[a] === k && src.actions.includes(a));
-      if (k === "j" || k === "k") { const n = list[Math.max(0, Math.min(list.length - 1, i + (k === "j" ? 1 : -1)))]; if (n) { sel = n.id; render(); } }
+      if (k === "j" || k === "k") { const n = list[Math.max(0, Math.min(list.length - 1, i + (k === "j" ? 1 : -1)))]; if (n) { sel = n.id; if (opened) opened = n.id; render(); } }
+      else if (Q && (k === "J" || k === "K") && i >= 0) {
+        const ids = list.map((t) => t.id), j = Math.max(0, Math.min(ids.length - 1, i + (k === "J" ? 1 : -1)));
+        if (j === i) return;
+        ids.splice(j, 0, ...ids.splice(i, 1)); reorder(ids);
+      }
+      else if (Q && (k === " " || k === "Enter") && sel) { opened = opened === sel ? null : sel; render(); }
       else if (action) nowAction(action);
       else if (k === "u") undo();
       else if (k === "n" && src.add) part("add").querySelector("input").focus();
+      else if (k === "c" && src.reply && Q && sel && opened !== sel) { opened = sel; render(); part("now").querySelector(".reply input")?.focus(); }
       else if (k === "c" && src.reply && part("now").querySelector(".reply input")) part("now").querySelector(".reply input").focus();
       else if (k === "r" && src.refresh) src.refresh();
-      else if (k === "Escape") part("snooze")?.classList.add("hidden");
+      else if (k === "Escape") { if (Q && opened && part("snooze")?.classList.contains("hidden") !== false) { opened = null; render(); } else part("snooze")?.classList.add("hidden"); }
       else return;
       e.preventDefault();
     });
@@ -246,12 +300,12 @@
     async function reload() {
       try { data = await src.load(); offline = false; } catch (e) {
         // the server restarting (an update) mustn't wipe the page: keep what's shown, and say so once
-        if (!data) put(part("now"), `<h2>Now</h2><p class="err">${esc(e.message || e)}</p>`);
+        if (!data) Q ? toast(String(e.message || e)) : put(part("now"), `<h2>Now</h2><p class="err">${esc(e.message || e)}</p>`);
         else if (!offline) { offline = true; toast("Can't reach the page's server just now. It catches up by itself."); }
         return;
       }
       render();
     }
-    return { reload, render, select(id) { sel = id; render(); }, get data() { return data; } };
+    return { reload, render, select(id) { sel = id; if (Q) opened = id; render(); }, get data() { return data; } };
   };
 })();

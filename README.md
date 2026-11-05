@@ -24,18 +24,23 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   sends it as you and says where. The refresh reads your notes too.
 - **Today** on the side is your day as a grid: meetings where they fall, with a **Join** link for calls,
   and your open work fitted into the free time from now to the end of your `hours`. Work comes first,
-  in its order, up to 90 minutes a task, and quick tasks are batched in the short gaps. Click a block to
-  open its task. Drag a block onto another to do it first: that's your order from then on, for the plan
-  and for Now in both tabs ("Back to the usual order" undoes it). The plan is worked out again as the
-  day goes.
+  in your order, each for as long as it takes (90 minutes until you say), carried on into the next gap
+  when it doesn't fit, and quick tasks are batched in the short gaps. Click a block to open its task;
+  dragging one onto another reorders too ("Back to the usual order" undoes your order). The plan is
+  worked out again as the day goes.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
   **Waiting** (on someone else), **Drop**, **Open** the source, **→ Work** / **→ Triage** (`m`: real
   work or not; the refresh leaves your choice alone), **Undo**.
-- **Two tabs** (`1`, `2`). **Triage** is the back-and-forth for today, P0 first: **Quick** (under 10
-  minutes) and **Your agent**, its quick asks. **Work** is real work, one task per Linear issue, in Linear's order, and
-  the deep work that isn't on Linear yet ([below](#work-linear)). In both, **Waiting**, **Later** and
-  **Handled today** are folded below, and Now is the top task that isn't waiting on anyone. Add your
-  own tasks in Triage.
+- **Two tabs** (`1`, `2`).
+  - **Triage** is the back-and-forth for today, P0 first: Now on top, then **Quick** (under 10 minutes)
+    and **Your agent**, its quick asks. **Waiting**, **Later** and **Handled today** are folded below.
+    Add your own tasks here.
+  - **Work** is your real work as one list in the order you'll do it: one task per Linear issue and
+    the deep work that isn't on Linear yet ([below](#work-linear)). Drag a row by its grip, or
+    `Shift+J` / `Shift+K`, to put it where it goes. Waiting rows stay in their place, greyed, and the
+    first one you can act on is marked **next**. Click a row (or `space`) to open it in place: the next
+    step, the links, the note to Claude, the buttons, and **Takes** (15 minutes to 4 hours) for the
+    day's plan. Once you've ordered the list, new tasks come in at the bottom, marked **new**.
 - **On the side:**
   - Today's meetings, with a now line and free gaps.
   - Your **pull requests** (read with `gh`), in two tabs. **Mine** groups them as ready to merge, needs

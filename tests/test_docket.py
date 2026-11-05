@@ -156,6 +156,16 @@ class Order(unittest.TestCase):
             tasks.act(a["id"], "order", "b", DAY, NOW)
 
 
+class Estimate(unittest.TestCase):
+    def test_an_estimate_is_yours_and_only_one_of_the_offered(self):
+        t = task()
+        tasks.save({"tasks": [t]})
+        t = tasks.act(t["id"], "est", "120", DAY, NOW)["tasks"][0]
+        self.assertEqual((t["est"], "est" in t["mine"]), (120, True))
+        with self.assertRaises(ValueError):
+            tasks.act(t["id"], "est", "7", DAY, NOW)
+
+
 class Kind(unittest.TestCase):
     def test_moving_a_task_to_work_is_yours_and_the_refresh_leaves_it(self):
         t = task()

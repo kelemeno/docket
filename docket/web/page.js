@@ -23,9 +23,9 @@ window.docketPage = function (el, opts = {}) {
   const minutes = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
   const hhmm = (m) => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
   // Your open work in today's free time, from now to the end of your hours (settings "hours"). What you
-  // put in order (dragging in the grid; data.order) goes first, in that order. Then Work, in its order,
-  // up to 90 minutes a task, and your quick ones batched, 10 minutes each, in the gaps too short for
-  // deep work. Worked out again on every load, so it follows the day as it goes.
+  // put in order (Work's list, or dragging in the grid; data.order) goes first, in that order. Then Work
+  // in its order, and your quick ones batched in the gaps too short for deep work. Each takes its
+  // estimate (est), carried on into the next gap when it doesn't fit. Worked out again on every load.
   const PRI = ["P0", "P1", "P2"];
   const pri = (t) => (t.star ? -1 : 0) + ((PRI.indexOf(t.priority) + 4) % 4);
   const place = (d, t) => { const i = (d.order || []).indexOf(t.id); return i < 0 ? Infinity : i; };
@@ -40,7 +40,8 @@ window.docketPage = function (el, opts = {}) {
       if (Math.min(s, to) - at >= 15) gaps.push([at, Math.min(s, to)]);
       at = Math.max(at, e);
     }
-    const open = (d.tasks || []).filter((t) => due(d, t) && (work(t) || triage(t)));
+    const open = (d.tasks || []).filter((t) => due(d, t) && (work(t) || triage(t))).map((t) => ({ ...t }));
+    const left = (t) => t.left ?? est(t);
     const mine = open.filter((t) => place(d, t) < Infinity).sort((a, b) => byOrder(a, b, d));
     const rest = open.filter((t) => place(d, t) === Infinity);
     const deep = rest.filter(work).sort((a, b) => level(d, a)[0] - level(d, b)[0] || level(d, a)[1] - level(d, b)[1] || pri(a) - pri(b));
@@ -51,8 +52,9 @@ window.docketPage = function (el, opts = {}) {
         const t = mine[0];
         if (work(t)) {
           if (e - s < 30) break;
-          const len = e - s - 90 < 15 ? e - s : 90;
-          out.push({ start: s, end: s + len, view: "work", tasks: [mine.shift()] }); s += len;
+          const len = Math.min(left(t), e - s);
+          out.push({ start: s, end: s + len, view: "work", tasks: [t] }); s += len;
+          if ((t.left = left(t) - len) < 15) mine.shift();  // what's left goes on in the next gap
         } else {
           let k = 0; while (k < mine.length && !work(mine[k]) && (k + 1) * 10 <= Math.min(e - s, 30)) k++;
           out.push({ start: s, end: s + k * 10, view: "triage", tasks: mine.splice(0, k) }); s += k * 10;
@@ -60,8 +62,9 @@ window.docketPage = function (el, opts = {}) {
       }
       while (e - s >= 15 && (deep.length && !mine.length || quick.length)) {  // the rest; quick ones also fill a gap yours don't fit
         if (deep.length && !mine.length && (e - s >= 45 || !quick.length && e - s >= 30)) {
-          const len = e - s - 90 < 15 ? e - s : 90, t = deep.shift();
+          const t = deep[0], len = Math.min(left(t), e - s);
           out.push({ start: s, end: s + len, view: "work", tasks: [t] }); s += len;
+          if ((t.left = left(t) - len) < 15) deep.shift();
         } else if (quick.length) {
           const k = Math.max(1, Math.min(quick.length, Math.floor(Math.min(e - s, 30) / 10)));
           out.push({ start: s, end: s + k * 10, view: "triage", tasks: quick.splice(0, k) }); s += k * 10;
@@ -193,14 +196,23 @@ window.docketPage = function (el, opts = {}) {
   const issueOf = (d, t) => t.linear ? t : (d.tasks || []).find((x) => x.linear && x.linear.key === t.issue);
   const level = (d, t) => { const i = issueOf(d, t); return i ? [i.linear.level, i.linear.sort] : [9, 0]; };
   const ROLE = { assignee: "assigned to you", reviewer: "your review" };
+  // how long a task takes, for the day's plan: yours (t.est, minutes), or 90 minutes of deep work, 10 quick
+  const est = (t) => t.est || (work(t) ? 90 : 10);
+  const dur = (m) => m < 60 ? m + "m" : m % 60 ? (m / 60).toFixed(1) + "h" : m / 60 + "h";
+  const EST = [15, 30, 60, 120, 240];
   function moreWork(t, d, where) {
     const i = t.linear, agents = i ? (d.tasks || []).filter((x) => x.aag && x.issue === i.key && x.status !== "done" && x.status !== "dropped") : [];
-    if (where === "row") return i ? "" : t.issue ? esc(t.issue) : `<span style="color:var(--warn)">not on Linear</span>`;
+    if (where === "row") {
+      const fresh = (d.order || []).length && place(d, t) === Infinity;
+      return [i ? esc(i.key) : t.issue ? esc(t.issue) : `<span style="color:var(--warn)">not on Linear</span>`,
+              `<span class="${t.est ? "" : "meta"}">${dur(est(t))}</span>`, fresh && `<span class="chip newmark">new</span>`].filter(Boolean).join(" · ");
+    }
+    const pick = `<div class="estpick"><span class="meta">Takes</span>${EST.map((m) => `<button data-act="est" data-value="${m}"${t.est === m ? ' class="on"' : ""}>${dur(m)}</button>`).join("")}${t.est ? "" : `<span class="meta">(${dur(est(t))} until you say)</span>`}</div>`;
     if (i) return `<div class="chips"><span class="chip">${esc(i.key)}</span><span class="chip">${ROLE[i.role] || ""}</span><span class="chip">${esc(i.state)}</span></div>`
-      + agents.map((x) => `<p class="why">Your agent: ${esc(x.next)}${(x.sources || [])[0] && x.sources[0].link ? ` · <a href="${esc(x.sources[0].link)}" target="_blank" rel="noopener">${esc(x.sources[0].label)} ↗</a>` : ""}</p>`).join("");
-    if (t.issue) return "";
+      + agents.map((x) => `<p class="why">Your agent: ${esc(x.next)}${(x.sources || [])[0] && x.sources[0].link ? ` · <a href="${esc(x.sources[0].link)}" target="_blank" rel="noopener">${esc(x.sources[0].label)} ↗</a>` : ""}</p>`).join("") + pick;
+    if (t.issue) return pick;
     const url = "https://linear.new?title=" + encodeURIComponent(t.title) + "&description=" + encodeURIComponent([t.next, t.why, ...(t.sources || []).map((s) => s.link)].filter(Boolean).join("\n\n"));
-    return `<p class="why" style="color:var(--warn)">Not on Linear: real work belongs to an issue. <a href="${esc(url)}" target="_blank" rel="noopener">Create it in Linear ↗</a>, or name its key (EVM-123) in a note, or ask for the review with a comment <code>review: @you</code> on its issue.</p>`;
+    return pick + `<p class="meta" style="color:var(--warn)">Not on Linear · <a href="${esc(url)}" target="_blank" rel="noopener">create it ↗</a> · or name its key in a note</p>`;
   }
   function linearLine(d) {
     const l = d.linear;
@@ -275,11 +287,12 @@ window.docketPage = function (el, opts = {}) {
     ...base("work"), show: work,
     actions: [...base("work").actions, "triage"],
     can: (t, a) => a !== "triage" || (!t.linear && !t.issue),  // an issue's work stays with the issue
-    lists: [{ key: "issues", title: "Linear issues", empty: "Nothing on Linear needs you now.", pick: (l) => l.filter((t) => t.linear || t.issue) },
-            { key: "loose", title: "Not on Linear", empty: "All the work here belongs to an issue.", pick: (l) => l.filter((t) => !t.linear && !t.issue) }],
-    rank: (a, b, d) => { const x = level(d, a), y = level(d, b); return byOrder(a, b, d) || x[0] - y[0] || x[1] - y[1]; },
+    queue: { title: "Your order", empty: "Nothing to work on: your Linear issues and reviews are waiting on others or planned for later." },
+    order: (ids) => both("work", post("/task", { id: ids[0], action: "order", value: [...ids, ...(views.work.data.order || []).filter((i) => !ids.includes(i))] })),
+    // your order, then priority (Docket's own, after this), and Linear's order within one
+    rank: (a, b, d) => { const x = level(d, a), y = level(d, b); return byOrder(a, b, d) || (a.priority === b.priority ? x[0] - y[0] || x[1] - y[1] : 0); },
     more: moreWork,
-    empty: (d) => `<p class="title">Nothing to work on.</p><p class="meta">Your Linear issues and reviews are waiting on others or planned for later.</p>${linearLine(d)}`,
+    empty: (d) => linearLine(d),
   });
   // Dragging a planned block onto another: its tasks go just before that block's, in the order the grid
   // shows now, and that's your order from then on.
