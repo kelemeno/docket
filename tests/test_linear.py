@@ -116,6 +116,18 @@ class Coupling(unittest.TestCase):
         _, by = synced(feed((issue("A-1"), None)), {}, [mine])
         self.assertEqual(by[mine["id"]]["issue"], "A-1")
 
+    def test_an_issue_made_from_a_task_couples_by_its_title_or_a_pr_in_its_description_and_takes_its_place(self):
+        agent = {"id": "aag-7", "title": "feat(v35): the upgrade engine", "next": "Your review", "status": "open", "kind": "deep",
+                 "aag": {"id": "7"}, "sources": [{"label": "o/r#1", "link": PR1}], "mine": []}
+        made = {**issue("A-9", title="feat(v35): the upgrade engine")}
+        described = {**issue("A-8", title="Something else"), "description": f"Answer\n\n{PR2}"}
+        other = {**tasks._new({"title": "Ping about it", "sources": [{"label": "pr", "link": PR2}]}, DAY, NOW), "mine": ["title"]}
+        reg = {"tasks": [agent, other], "order": ["aag-7"]}
+        linear.sync(reg, feed((made, None), (described, None)), {}, DAY, NOW)
+        by = {t["id"]: t for t in reg["tasks"]}
+        self.assertEqual((by["aag-7"]["issue"], by[other["id"]]["issue"]), ("A-9", "A-8"))
+        self.assertEqual(reg["order"], ["lin-A-9"])
+
     def test_deep_work_on_no_issue_stays_uncoupled_and_an_issue_off_linear_is_handled(self):
         loose = tasks._new({"title": "Prepare calldata"}, DAY, NOW)
         reg, by = synced(feed((issue("A-1"), None)), {}, [loose])

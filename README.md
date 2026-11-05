@@ -151,7 +151,8 @@ or other reviewers moves it to Waiting until that changes. A review whose PRs ar
 is done, and an issue that's done, cancelled or not yours any more on Linear is handled.
 
 The rest of the list is coupled to its issue: a task that names the key (`EVM-123`), links to the issue
-or to one of its PRs. A task the refresh made about it (a Slack thread about the PR, say) is folded
+or to one of its PRs (attached to the issue, or linked in its description), or has the issue's title (one
+made with **create ↗**). In your Work order the issue takes the task's place. A task the refresh made about it (a Slack thread about the PR, say) is folded
 into the issue's task, with its why and links. Your agent's task for one of its PRs shows on the
 issue's card and decides its move. Deep work that belongs to no issue shows under **Not on Linear**,
 with a link that opens a new Linear issue filled in from the task: your team, you as the assignee, its

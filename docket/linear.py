@@ -51,7 +51,7 @@ STATUS = aag.STATUS
 YOURS = {"conflicts", "CI failing", "changes requested", "ready", "draft", "review requested", "re-requested", "new commits"}
 THEIRS = {"needs review", "CI running", "waiting on author", "approved"}
 
-ISSUE = ("id identifier title url priority sortOrder state{name type} assignee{name} "
+ISSUE = ("id identifier title description url priority sortOrder state{name type} assignee{name} "
          "attachments{nodes{url metadata}}")
 QUERY = ("query($since:DateTimeOrDuration!){viewer{id name displayName email teams(first:20){nodes{key archivedAt}} "
          "assignedIssues(first:100,filter:{state:{type:{nin:[\"completed\",\"canceled\"]}}}){nodes{" + ISSUE + "}}} "
@@ -107,7 +107,8 @@ def reviews(comments, me):
 
 
 def _prs(i):
-    """The issue's GitHub PRs, and the ones Linear says are merged or closed."""
+    """The issue's GitHub PRs (attached, or linked in its description), and the ones Linear says are
+    merged or closed."""
     urls, over = [], set()
     for a in (i.get("attachments") or {}).get("nodes") or []:
         m = PR.match(str(a.get("url") or ""))
@@ -116,6 +117,7 @@ def _prs(i):
             meta = a.get("metadata") or {}
             if str(meta.get("status") or meta.get("state") or "").lower() in ("merged", "closed"):
                 over.add(m.group(0))
+    urls += [u for u in dict.fromkeys(PR.findall(str(i.get("description") or ""))) if u not in urls]
     return urls, over
 
 
@@ -148,9 +150,11 @@ def _pr_links(t):
     return {m.group(0) for s in t.get("sources", []) for m in [PR.match(s["link"])] if m}
 
 
-def coupled(t, by_key, by_pr):
-    """The key of the issue a task is about, or None."""
-    return next((k for k in sorted(keys(t)) if k in by_key), None) or next((by_pr[u] for u in sorted(_pr_links(t)) if u in by_pr), None)
+def coupled(t, by_key, by_pr, by_title=None):
+    """The key of the issue a task is about, or None: one it names, one of whose PRs it links, or one with
+    its title (an issue made from the task, Docket's create link)."""
+    return (next((k for k in sorted(keys(t)) if k in by_key), None) or next((by_pr[u] for u in sorted(_pr_links(t)) if u in by_pr), None)
+            or (by_title or {}).get(str(t.get("title", "")).strip().casefold()))
 
 
 def move(x, prs, agents):
@@ -218,6 +222,7 @@ def sync(reg, feed, prs, today, now):
     before = json.dumps(reg, sort_keys=True)
     by_key = {x["key"]: x for x in feed}
     by_pr = {u: x["key"] for x in feed for u in x["prs"]}
+    by_title = {x["title"].strip().casefold(): x["key"] for x in feed}
     ours = {t["linear"]["key"]: t for t in reg["tasks"] if t.get("linear")}
     fresh = set()
     for k, x in by_key.items():  # new ones first, so what's about them can be folded in
@@ -230,12 +235,16 @@ def sync(reg, feed, prs, today, now):
     for t in reg["tasks"]:
         if t.get("linear"):
             continue
-        k = coupled(t, by_key, by_pr)
+        k = coupled(t, by_key, by_pr, by_title)
         if not k:
             t.pop("issue", None)
             continue
         t["issue"] = k
         home = ours.get(k)
+        # your order had the task: the issue's task takes its place (the task now shows with the issue)
+        order = reg.get("order") or []
+        if home and t["id"] in order and home["id"] not in order:
+            order[order.index(t["id"])] = home["id"]
         # the refresh's own task about an issue: its why and links go to the issue's task, and it goes
         if home and not t.get("aag") and t["status"] in tasks.OPEN and not t.get("mine") and not t.get("notes"):
             if t.get("why") and (home["id"] in fresh or home.get("why") == home["linear"].get("why")):
