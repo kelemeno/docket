@@ -274,6 +274,7 @@
       el.addEventListener("pointerdown", (e) => {
         const r = e.target.closest("[data-q] .row");
         if (!r || e.button !== 0 || e.target.closest("a, button, input, select")) return;
+        if (e.target.closest(".grip")) e.preventDefault();  // the grip is only for dragging: no text selection from it
         drag = { id: r.dataset.id, row: r, x: e.clientX, y: e.clientY, at: e.clientY, on: false };
       });
       addEventListener("pointermove", (e) => {
@@ -281,6 +282,7 @@
         if (!drag.on && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
         if (!drag.on) {
           drag.on = true; drag.row.classList.add("dragging"); document.body.classList.add("dragging-row");
+          getSelection()?.removeAllRanges();  // the text the press began selecting
           drag.scroll = setInterval(() => { const edge = 70; if (drag && drag.at < edge) scrollBy(0, -14); else if (drag && drag.at > innerHeight - edge) scrollBy(0, 14); }, 16);
         }
         e.preventDefault();

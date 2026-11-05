@@ -166,3 +166,4 @@ details.card[open] > summary { margin-bottom: 10px; }
 .row.tosort { border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; }
 body.dragging-row, body.dragging-row * { user-select: none; cursor: grabbing !important; }
 [data-q] .row { touch-action: pan-y; }
+body.dragging-row ::selection { background: transparent; }
