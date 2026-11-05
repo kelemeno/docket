@@ -161,7 +161,7 @@
                                   t.status === "open" && !due(t) ? (t.until && t.until.startsWith(data.today) ? "until " + esc(t.until.slice(11)) : "from " + esc(day(t.do))) : ""].filter(Boolean).join(" · ")
           : [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
                      t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "",
-                     opts.closed ? (t.status === "dropped" ? "dropped" : t.closed_by === "claude" ? "done: " + esc(t.evidence) : "done") : "", more(t, "row")]
+                     opts.closed ? (t.status === "dropped" ? "dropped" : ["claude", "gh"].includes(t.closed_by) ? "done: " + esc(t.evidence) : "done") : "", more(t, "row")]
           .filter(Boolean).join(" · ");
         const subline = sub + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`

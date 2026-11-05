@@ -16,6 +16,8 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
 - **Rules that keep it honest.**
   - A field you set stays yours, and the refresh leaves it alone.
   - A task is done only with evidence: a draft isn't sent, silence isn't done.
+  - A review asked of you is done once `gh` shows you approved the PR, within a few minutes,
+    without waiting for the next refresh.
   - A task you dropped or finished doesn't come back.
   - An overdue task rolls to today and shows how often it slipped.
 - **Reply to Claude** on a task (`c`): "ask Sam for a review in the team thread". It finds the thread,
