@@ -173,6 +173,27 @@ class Order(unittest.TestCase):
         with self.assertRaises(ValueError):
             tasks.act(a["id"], "order", "b", DAY, NOW)
 
+    def test_dragging_a_plan_block_keeps_tasks_not_drawn_in_today(self):
+        a, hidden, b, unsorted = (task(title=title) for title in ("A", "Waiting", "B", "Not in your order"))
+        tasks.save({"tasks": [a, hidden, b, unsorted], "order": [a["id"], hidden["id"], b["id"]]})
+        reg = tasks.act(b["id"], "order_move", {"ids": [b["id"]], "before": a["id"]}, DAY, NOW)
+        self.assertEqual(reg["order"], [b["id"], a["id"], hidden["id"]])
+        reg = tasks.act(unsorted["id"], "order_move", {"ids": [unsorted["id"]], "before": a["id"]}, DAY, NOW)
+        self.assertEqual(reg["order"], [b["id"], unsorted["id"], a["id"], hidden["id"]])
+        self.assertEqual(tasks.load()["order"], reg["order"])
+
+    def test_dragging_before_a_task_to_sort_keeps_the_rest_of_your_order(self):
+        a, hidden, unsorted = (task(title=title) for title in ("A", "Later", "To sort"))
+        tasks.save({"tasks": [a, hidden, unsorted], "order": [a["id"], hidden["id"]]})
+        reg = tasks.act(a["id"], "order_move", {"ids": [a["id"]], "before": unsorted["id"]}, DAY, NOW)
+        self.assertEqual(reg["order"], [hidden["id"], a["id"]])
+
+    def test_dragging_a_quick_batch_moves_all_its_tasks(self):
+        a, hidden, quick1, quick2 = (task(title=title) for title in ("A", "Waiting", "Quick 1", "Quick 2"))
+        tasks.save({"tasks": [a, hidden, quick1, quick2], "order": [a["id"], hidden["id"]]})
+        reg = tasks.act(quick1["id"], "order_move", {"ids": [quick1["id"], quick2["id"]], "before": a["id"]}, DAY, NOW)
+        self.assertEqual(reg["order"], [quick1["id"], quick2["id"], a["id"], hidden["id"]])
+
 
 class Estimate(unittest.TestCase):
     def test_an_estimate_is_yours_and_only_one_of_the_offered(self):

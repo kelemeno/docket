@@ -28,7 +28,8 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   and your open work fitted into the free time from now to the end of your `hours`. Work comes first,
   in your order, each for as long as it takes (90 minutes until you say), carried on into the next gap
   when it doesn't fit, and quick tasks are batched in the short gaps. Click a block to open its task;
-  dragging one onto another reorders too ("Back to the usual order" undoes your order). The plan is
+  dragging one onto another moves that task in your order too ("Clear your order" moves all of it to
+  To sort, after confirmation). The plan is
   worked out again as the day goes.
 - **Now:** **Done**, **Snooze** (15 or 30 minutes, an hour or two, tomorrow, Monday, next week, a date;
   in Work it's **Remind me**, and a row's **15m** / **1h** put it off from the list: it stays greyed

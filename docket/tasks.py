@@ -290,6 +290,23 @@ def act(task_id, action, value, today, now):
             reg["order"] = list(dict.fromkeys(i for i in value if i in ids))[:200]
             save(reg)
             return reg
+        elif action == "order_move":  # move a planned block without replacing tasks outside today's plan
+            ids = {x["id"] for x in reg["tasks"]}
+            if not isinstance(value, dict) or not isinstance(value.get("ids"), list) or not isinstance(value.get("before"), str) or value["before"] not in ids:
+                raise ValueError("order_move needs task ids and a target task id")
+            moving = list(dict.fromkeys(i for i in value["ids"] if isinstance(i, str) and i in ids))
+            if not moving:
+                raise ValueError("order_move needs at least one task id")
+            if value["before"] in moving:
+                return reg
+            order = [i for i in reg.get("order", []) if i not in moving]
+            at = order.index(value["before"]) if value["before"] in order else len(order)
+            order[at:at] = moving
+            if len(order) > 200:
+                raise ValueError("order is full")
+            reg["order"] = order
+            save(reg)
+            return reg
         elif action == "est":  # how long you think it takes, in minutes (the day's plan sizes it so)
             if str(value) not in ESTIMATES:
                 raise ValueError("bad estimate")
