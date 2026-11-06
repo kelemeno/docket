@@ -51,6 +51,14 @@ class Rules(unittest.TestCase):
         self.assertEqual((reg["tasks"][0]["do"], reg["tasks"][0]["rolled"]), (DAY, 1))
         self.assertFalse(tasks.roll(reg, DAY))  # once a day
 
+    def test_long_text_is_cut_at_a_word(self):
+        t = task(next="Make the fix: a disengaged agent re-engages only when pinged, even in its own thread " * 4)
+        self.assertLessEqual(len(t["next"]), 240)
+        self.assertTrue(t["next"].endswith("…"))
+        self.assertTrue(t["next"][:-1].rsplit(" ", 1)[-1] in "Make the fix: a disengaged agent re-engages only when pinged, even in its own thread")
+        long_link = "https://example.com/" + "a" * 500
+        self.assertEqual(task(sources=[{"label": "x", "link": long_link}])["sources"][0]["link"], long_link[:400])
+
     def test_only_web_links(self):
         t = task(sources=[{"label": "x", "link": "javascript:alert(1)"}, {"label": "y", "link": "https://example.com/a"}])
         self.assertEqual([s["link"] for s in t["sources"]], ["", "https://example.com/a"])

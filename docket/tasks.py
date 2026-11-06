@@ -60,15 +60,21 @@ def save(reg):
     store.write(path(), reg)
 
 
-def _text(v, n):
-    return re.sub(r"\s+", " ", str(v or "")).strip()[:n]
+def _text(v, n, words=True):
+    """One line of at most n characters; a longer one is cut at a word, with "…" (a link, words=False,
+    just where it ends)."""
+    s = re.sub(r"\s+", " ", str(v or "")).strip()
+    if len(s) <= n or not words:
+        return s[:n]
+    cut = s[:n - 1]
+    return (cut[:cut.rindex(" ")] if " " in cut[n // 2:] else cut).rstrip(" ,;:-–") + "…"
 
 
 def _sources(items):
     out = []
     for s in (items or [])[:6] if isinstance(items, list) else []:
         if isinstance(s, dict):
-            link = _text(s.get("link"), 400)
+            link = _text(s.get("link"), 400, words=False)
             out.append({"label": _text(s.get("label"), 80) or "source",
                         "link": link if link.startswith("https://") else ""})  # the page makes these <a href>
     return _merge([], out)
@@ -112,7 +118,7 @@ def pr_key(link):
 
 
 def _review(n):
-    return {"review": _text(n["review"], 400)} if isinstance(n, dict) and pr_key(n.get("review")) else {}
+    return {"review": _text(n["review"], 400, words=False)} if isinstance(n, dict) and pr_key(n.get("review")) else {}
 
 
 def _new(n, today, now):
