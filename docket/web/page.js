@@ -269,7 +269,7 @@ window.docketPage = function (el, opts = {}) {
       async sideClick(e, d) {
         if (e.target.closest("[data-order-reset]")) {
           e.preventDefault();
-          if (!confirm("Move every task in Your order to To sort?")) return;
+          if (!confirm("Clear your order? Its tasks go back to Triage (New for Work), to place again.")) return;
           return both(v, post("/task", { id: d.tasks[0].id, action: "order", value: [] }));
         }
         const blk = e.target.closest(".blk[data-task]");
