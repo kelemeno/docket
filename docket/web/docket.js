@@ -134,7 +134,7 @@
       if (!t) { sel = null; put(part("now"), `<h2>Now</h2>${src.empty(data)}`); return; }
       sel = t.id;
       const btn = (a) => !can(t, a) || a === "open" && !(t.sources || []).some((s) => s.link) ? ""
-        : `<button data-a="${a}"${a === "done" ? ' class="primary"' : ""}>${a === "star" && t.star ? "Unstar" : a === "snooze" && Q ? "Remind me" : NAMES[a]}<kbd>${KEYS[a]}</kbd></button>`;
+        : `<button data-a="${a}"${a === "done" ? ' class="primary"' : ""}>${a === "star" && t.star ? "Unstar" : a === "waiting" && t.status === "waiting" ? "Not waiting" : a === "snooze" && Q ? "Remind me" : NAMES[a]}<kbd>${KEYS[a]}</kbd></button>`;
       const ses = (t.sessions || []).map((s) => `<span class="chip">⌁ ${esc(s)}</span>`).join("");
       if (!put(part("now"), `${Q ? "" : "<h2>Now</h2>"}
         ${Q ? "" : `<p class="title">${esc(t.title)}</p>`}
@@ -228,6 +228,7 @@
       const t = current(); if (!t || !can(t, a)) return;
       if (a === "open") { const s = (t.sources || []).find((x) => x.link); if (s) window.open(s.link, "_blank", "noopener"); return; }
       if (a === "snooze") { part("snooze")?.classList.toggle("hidden"); return; }
+      if (a === "waiting" && t.status === "waiting") return act(t, "open", null, "Not waiting any more");  // pressed again: back to open
       const list = src.places && src.places(t, data, a);
       if (list) return placeMenu(t, a, list);
       act(t, a, null, a === "star" ? null : LABEL[a]);
