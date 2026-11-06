@@ -51,6 +51,14 @@ class Rules(unittest.TestCase):
         self.assertEqual((reg["tasks"][0]["do"], reg["tasks"][0]["rolled"]), (DAY, 1))
         self.assertFalse(tasks.roll(reg, DAY))  # once a day
 
+    def test_long_text_is_cut_at_a_word(self):
+        t = task(next="Make the fix: a disengaged agent re-engages only when pinged, even in its own thread " * 4)
+        self.assertLessEqual(len(t["next"]), 240)
+        self.assertTrue(t["next"].endswith("…"))
+        self.assertTrue(t["next"][:-1].rsplit(" ", 1)[-1] in "Make the fix: a disengaged agent re-engages only when pinged, even in its own thread")
+        long_link = "https://example.com/" + "a" * 500
+        self.assertEqual(task(sources=[{"label": "x", "link": long_link}])["sources"][0]["link"], long_link[:400])
+
     def test_only_web_links(self):
         t = task(sources=[{"label": "x", "link": "javascript:alert(1)"}, {"label": "y", "link": "https://example.com/a"}])
         self.assertEqual([s["link"] for s in t["sources"]], ["", "https://example.com/a"])
@@ -124,6 +132,16 @@ class Notes(unittest.TestCase):
             self.assertEqual("You can only read" in ask.call_args[0][0], not act)
 
 
+    def test_a_note_is_told_how_to_read_github(self):
+        class Now:
+            def __init__(self, target, daemon): self.target = target
+            def start(self): self.target()
+        with mock.patch.object(app, "_ask", return_value={"answer": "Found it."}) as ask, mock.patch.object(app, "_which", return_value="/bin/gh"), \
+             mock.patch.object(app.threading, "Thread", Now):
+            app.Page().reply(self.t["id"], "check whether Kalman has a PR for this")
+        self.assertIn("one plain command at a time, no pipes", ask.call_args[0][0])
+
+
 class Sources(unittest.TestCase):
     def test_one_link_per_slack_conversation_the_latest_under_the_first_label(self):
         dm = "https://x.enterprise.slack.com/archives/C1/p100"
@@ -154,6 +172,27 @@ class Order(unittest.TestCase):
         self.assertEqual(tasks.load()["order"], [b["id"], a["id"]])
         with self.assertRaises(ValueError):
             tasks.act(a["id"], "order", "b", DAY, NOW)
+
+    def test_dragging_a_plan_block_keeps_tasks_not_drawn_in_today(self):
+        a, hidden, b, unsorted = (task(title=title) for title in ("A", "Waiting", "B", "Not in your order"))
+        tasks.save({"tasks": [a, hidden, b, unsorted], "order": [a["id"], hidden["id"], b["id"]]})
+        reg = tasks.act(b["id"], "order_move", {"ids": [b["id"]], "before": a["id"]}, DAY, NOW)
+        self.assertEqual(reg["order"], [b["id"], a["id"], hidden["id"]])
+        reg = tasks.act(unsorted["id"], "order_move", {"ids": [unsorted["id"]], "before": a["id"]}, DAY, NOW)
+        self.assertEqual(reg["order"], [b["id"], unsorted["id"], a["id"], hidden["id"]])
+        self.assertEqual(tasks.load()["order"], reg["order"])
+
+    def test_dragging_before_a_task_to_sort_keeps_the_rest_of_your_order(self):
+        a, hidden, unsorted = (task(title=title) for title in ("A", "Later", "To sort"))
+        tasks.save({"tasks": [a, hidden, unsorted], "order": [a["id"], hidden["id"]]})
+        reg = tasks.act(a["id"], "order_move", {"ids": [a["id"]], "before": unsorted["id"]}, DAY, NOW)
+        self.assertEqual(reg["order"], [hidden["id"], a["id"]])
+
+    def test_dragging_a_quick_batch_moves_all_its_tasks(self):
+        a, hidden, quick1, quick2 = (task(title=title) for title in ("A", "Waiting", "Quick 1", "Quick 2"))
+        tasks.save({"tasks": [a, hidden, quick1, quick2], "order": [a["id"], hidden["id"]]})
+        reg = tasks.act(quick1["id"], "order_move", {"ids": [quick1["id"], quick2["id"]], "before": a["id"]}, DAY, NOW)
+        self.assertEqual(reg["order"], [quick1["id"], quick2["id"], a["id"], hidden["id"]])
 
 
 class Estimate(unittest.TestCase):
@@ -233,6 +272,11 @@ class Tools(unittest.TestCase):
              mock.patch("subprocess.run", run):
             app._ask("hi", act=act)
         return seen
+
+    def test_gh_lookups_are_allowed_even_with_a_setup_from_before_them(self):
+        allow = self.ran(False)["allow"]
+        for t in ("Bash(gh search repos:*)", "Bash(gh repo view:*)", "Bash(gh pr list:*)"):
+            self.assertEqual(allow.count(t), 1)
 
     def test_a_refresh_only_reads_and_a_note_may_send_but_never_delete_or_share(self):
         read = self.ran(False)

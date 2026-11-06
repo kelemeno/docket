@@ -109,7 +109,7 @@ window.docketPage = function (el, opts = {}) {
     }
     if (now >= top * 60 && now <= end * 60) html += `<div class="nowat" style="top:${y(now)}px"></div>`;
     const left = (p.left ? `<p class="meta">${p.left} more open task${p.left === 1 ? "" : "s"} don't fit before ${hhmm(p.to)}.</p>` : "")
-      + `<p class="meta">Drag a block onto another to do it first.${(data.order || []).length ? ` <a href="#" data-order-reset>Back to the usual order</a>` : ""}</p>`;
+      + `<p class="meta">Drag a block onto another to do it first.${(data.order || []).length ? ` <a href="#" data-order-reset>Clear your order</a>` : ""}</p>`;
     return `<div class="day" style="height:${y(end * 60) + 8}px">${html}</div>`
       + ((data.meetings || []).length ? "" : `<p class="meta">No meetings today.</p>`) + left;
   }
@@ -234,7 +234,10 @@ window.docketPage = function (el, opts = {}) {
               `<span class="${t.est ? "" : "meta"}">${dur(est(t))}</span>`].filter(Boolean).join(" · ");
     }
     const pick = `<div class="estpick"><span class="meta">Takes</span>${EST.map((m) => `<button data-act="est" data-value="${m}"${t.est === m ? ' class="on"' : ""}>${dur(m)}</button>`).join("")}${t.est ? "" : `<span class="meta">(${dur(est(t))} until you say)</span>`}</div>`;
-    const agentLines = helpers.map((x) => `<p class="why">Your agent: ${esc(x.next)}${(x.sources || [])[0] && x.sources[0].link ? ` · <a href="${esc(x.sources[0].link)}" target="_blank" rel="noopener">${esc(x.sources[0].label)} ↗</a>` : ""}</p>`).join("");
+    // each agent task on this work, with all its links (DM thread, PR, agents thread) the task doesn't have itself
+    const has = new Set((t.sources || []).map((s) => s.link));
+    const agentLines = helpers.map((x) => `<p class="why">Your agent: ${[esc(x.next), ...(x.sources || []).filter((s) => s.link && !has.has(s.link))
+      .map((s) => `<a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.label)} ↗</a>`)].join(" · ")}</p>`).join("");
     if (i) return `<div class="chips"><span class="chip">${esc(i.key)}</span><span class="chip">${ROLE[i.role] || ""}</span><span class="chip">${esc(i.state)}</span></div>` + agentLines + pick;
     if (t.issue) return agentLines + pick;
     return agentLines + pick + `<p class="meta" style="color:var(--warn)">Not on Linear · <a href="${esc(create)}" target="_blank" rel="noopener">create it ↗</a> · or name its key in a note</p>`;
@@ -264,7 +267,11 @@ window.docketPage = function (el, opts = {}) {
       refresh: () => opts.run && opts.run.click(),
       side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? `<section class="card"><h2>Your agent <span class="count">${((d.aag.feed || {}).tasks || []).filter((t) => t.column === "needs_you").length || ""}</span></h2>${agent(d)}</section>` : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section><section class="card"><h2>Claude sessions</h2>${sessions(d)}</section>`,
       async sideClick(e, d) {
-        if (e.target.closest("[data-order-reset]")) { e.preventDefault(); return both(v, post("/task", { id: d.tasks[0].id, action: "order", value: [] })); }
+        if (e.target.closest("[data-order-reset]")) {
+          e.preventDefault();
+          if (!confirm("Move every task in Your order to To sort?")) return;
+          return both(v, post("/task", { id: d.tasks[0].id, action: "order", value: [] }));
+        }
         const blk = e.target.closest(".blk[data-task]");
         if (blk && !e.target.closest("a")) { show(blk.dataset.view); views[blk.dataset.view].select(blk.dataset.task); return; }
         const b = e.target.closest("button[data-prtab]"); if (!b) return;
@@ -336,19 +343,17 @@ window.docketPage = function (el, opts = {}) {
     empty: (d) => linearLine(d),
   });
   // Dragging a planned block onto another: its tasks go just before that block's, in the order the grid
-  // shows now, and that's your order from then on.
+  // shows now. Only the dragged block moves; tasks outside today's plan keep their places.
   let dragged = null;
   el.addEventListener("dragstart", (e) => { const b = e.target.closest?.(".blk.plan"); if (b) { dragged = b.dataset.ids.split(" "); e.dataTransfer.effectAllowed = "move"; } });
   el.addEventListener("dragover", (e) => { if (dragged && e.target.closest(".blk.plan")) e.preventDefault(); });
   el.addEventListener("drop", async (e) => {
     const target = e.target.closest(".blk.plan"); if (!dragged || !target) return;
     e.preventDefault();
-    const seq = [...target.closest(".day").querySelectorAll(".blk.plan")].sort((a, b) => parseFloat(a.style.top) - parseFloat(b.style.top))
-      .flatMap((b) => b.dataset.ids.split(" ")).filter((i) => !dragged.includes(i));
-    const at = seq.indexOf(target.dataset.ids.split(" ")[0]);
-    seq.splice(at < 0 ? 0 : at, 0, ...dragged);
-    const id = dragged[0]; dragged = null;
-    try { await post("/task", { id, action: "order", value: seq }); } catch (err) { alert(err.message); }
+    const before = target.dataset.ids.split(" ")[0];
+    const ids = dragged; dragged = null;
+    if (ids.includes(before)) return;
+    try { await post("/task", { id: ids[0], action: "order_move", value: { ids, before } }); } catch (err) { alert(err.message); }
     await Promise.all(Object.values(views).map((x) => x.reload()));
     for (const k in views) views[k].select(null);  // Now: your new first one
   });

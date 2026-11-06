@@ -262,12 +262,16 @@ def sync(reg, feed, prs, today, now):
         order = reg.get("order") or []
         if home and t["id"] in order and home["id"] not in order:
             order[order.index(t["id"])] = home["id"]
-        # the refresh's own task about an issue: its why and links go to the issue's task, and it goes
-        if home and not t.get("aag") and t["status"] in tasks.OPEN and not t.get("mine") and not t.get("notes"):
+        # the refresh's own task about an issue, even one you touched (its kind, a note): its why, links and
+        # notes go to the issue's task, and it goes. Not one you typed in, and not while a note waits for Claude.
+        if home and not t.get("aag") and t["status"] in tasks.OPEN and "title" not in (t.get("mine") or []) \
+                and not t.get("asked"):
             if t.get("why") and (home["id"] in fresh or home.get("why") == home["linear"].get("why")):
                 home["why"] = t["why"]
             seen = {s["link"] for s in home["sources"]}
             home["sources"] = (home["sources"] + [s for s in t["sources"] if s["link"] and s["link"] not in seen])[:6]
+            if t.get("notes"):
+                home["notes"] = sorted((home.get("notes") or []) + t["notes"], key=lambda n: n["at"])[-tasks.KEEP_NOTES:]
             folded.add(t["id"])
     reg["tasks"] = [t for t in reg["tasks"] if t["id"] not in folded]
     agents = {}

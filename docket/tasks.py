@@ -60,15 +60,21 @@ def save(reg):
     store.write(path(), reg)
 
 
-def _text(v, n):
-    return re.sub(r"\s+", " ", str(v or "")).strip()[:n]
+def _text(v, n, words=True):
+    """One line of at most n characters; a longer one is cut at a word, with "…" (a link, words=False,
+    just where it ends)."""
+    s = re.sub(r"\s+", " ", str(v or "")).strip()
+    if len(s) <= n or not words:
+        return s[:n]
+    cut = s[:n - 1]
+    return (cut[:cut.rindex(" ")] if " " in cut[n // 2:] else cut).rstrip(" ,;:-–") + "…"
 
 
 def _sources(items):
     out = []
     for s in (items or [])[:6] if isinstance(items, list) else []:
         if isinstance(s, dict):
-            link = _text(s.get("link"), 400)
+            link = _text(s.get("link"), 400, words=False)
             out.append({"label": _text(s.get("label"), 80) or "source",
                         "link": link if link.startswith("https://") else ""})  # the page makes these <a href>
     return _merge([], out)
@@ -112,7 +118,7 @@ def pr_key(link):
 
 
 def _review(n):
-    return {"review": _text(n["review"], 400)} if isinstance(n, dict) and pr_key(n.get("review")) else {}
+    return {"review": _text(n["review"], 400, words=False)} if isinstance(n, dict) and pr_key(n.get("review")) else {}
 
 
 def _new(n, today, now):
@@ -282,6 +288,23 @@ def act(task_id, action, value, today, now):
                 raise ValueError("order needs a list of task ids")
             ids = {x["id"] for x in reg["tasks"]}
             reg["order"] = list(dict.fromkeys(i for i in value if i in ids))[:200]
+            save(reg)
+            return reg
+        elif action == "order_move":  # move a planned block without replacing tasks outside today's plan
+            ids = {x["id"] for x in reg["tasks"]}
+            if not isinstance(value, dict) or not isinstance(value.get("ids"), list) or not isinstance(value.get("before"), str) or value["before"] not in ids:
+                raise ValueError("order_move needs task ids and a target task id")
+            moving = list(dict.fromkeys(i for i in value["ids"] if isinstance(i, str) and i in ids))
+            if not moving:
+                raise ValueError("order_move needs at least one task id")
+            if value["before"] in moving:
+                return reg
+            order = [i for i in reg.get("order", []) if i not in moving]
+            at = order.index(value["before"]) if value["before"] in order else len(order)
+            order[at:at] = moving
+            if len(order) > 200:
+                raise ValueError("order is full")
+            reg["order"] = order
             save(reg)
             return reg
         elif action == "est":  # how long you think it takes, in minutes (the day's plan sizes it so)
