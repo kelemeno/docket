@@ -32,7 +32,8 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   worked out again as the day goes.
 - **Now:** **Done**, **Snooze** (30 minutes, an hour, tomorrow, Monday, next week, a date),
   **Waiting** (on someone else), **Drop**, **Open** the source, **→ Work** / **→ Triage** (`m`: real
-  work or not; the refresh leaves your choice alone), **Undo**.
+  work or not; the refresh leaves your choice alone). **→ Work** shows your Work order: click the task
+  it goes above, **At the end**, or **To sort** to place it later, **Undo**.
 - **Two tabs** (`1`, `2`).
   - **Triage** is the back-and-forth for today, P0 first: Now on top, then **Quick** (under 10 minutes)
     and **Your agent**, its quick asks. **Waiting**, **Later** and **Handled today** are folded below.

@@ -270,7 +270,16 @@ window.docketPage = function (el, opts = {}) {
     };
   }
   async function act(t, action, value) {
-    if (action === "work" || action === "triage") return post("/task", { id: t.id, action: "kind", value: action === "work" ? "deep" : "quick" });
+    if (action === "work" || action === "triage") {
+      const out = await post("/task", { id: t.id, action: "kind", value: action === "work" ? "deep" : "quick" });
+      const at = value && value.at;
+      if (action !== "work" || at === undefined || at === "sort") return out;
+      // into your order where you picked: above that task, or at the end
+      const order = (out.order || []).filter((i) => i !== t.id), shown = workOrder(out, t);
+      const before = typeof at === "number" && shown[at] ? order.indexOf(shown[at].id) : -1;
+      order.splice(before < 0 ? order.length : before, 0, t.id);
+      return post("/task", { id: t.id, action: "order", value: order });
+    }
     if (action !== "restore") return post("/task", { id: t.id, action, value });
     // undo: back to the view, or the status and day, it had before
     const today = views.triage.data.today, cur = (views.triage.data.tasks || []).find((x) => x.id === t.id);
@@ -293,9 +302,13 @@ window.docketPage = function (el, opts = {}) {
     clearTimeout(window.poll);
     if (d.running || d.tasks.some((t) => t.asked) || (d.prs || {}).loading) window.poll = setTimeout(reloadAll, 5000);  // a refresh or an answer coming
   }
+  // your Work order as it shows: the tasks in it that are still open or waiting
+  const workOrder = (d, t) => (d.order || []).map((i) => (d.tasks || []).find((x) => x.id === i))
+    .filter((x) => x && x.id !== (t && t.id) && work(x) && (x.status === "open" || x.status === "waiting"));
   views.triage = docket(box("triage"), {
     ...base("triage"), show: triage, rank: byOrder,
     actions: [...base("triage").actions, "work"],
+    places: (t, d, a) => a === "work" ? workOrder(d, t).map((x) => ({ id: x.id, title: x.title, blocked: x.status === "waiting" || (x.do || d.today) > d.today })) : null,
     lists: [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => !t.aag) },
             { key: "agent", title: "Your agent", empty: "Your agent needs nothing from you.", pick: (l) => l.filter((t) => t.aag) }],
     add: (text, kind) => both("triage", post("/task", { action: "add", value: text, kind })),

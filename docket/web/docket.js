@@ -16,6 +16,9 @@
 //     actions: ["done", "snooze", "waiting", "drop", "open", "star"]   the buttons this source has; and
 //                         "work" / "triage" for a page with those two views (act gets them as they are)
 //     can(task, action): bool         optional: a button this task doesn't get
+//     places(task, data, action): [{id, title, blocked}] or null   optional: the button opens a list
+//                         to say where the task goes (above one of these, at the end, or "sort" for
+//                         later); act then gets {at: index | "end" | "sort"}
 //     side(data): html    the side panel;  sideClick(event, data): data or undefined
 //     empty(data): html   Now when there's nothing to do;  foot(data): text under the side panel
 //     show(task, data): bool          optional: the tasks this view has (a page with several views)
@@ -142,6 +145,7 @@
         ${src.reply ? notes(t) + `<form class="reply"><input data-id="${esc(t.id)}" autocomplete="off" aria-label="Reply to ${esc(ai)} about this task"
           placeholder="Reply to ${esc(ai)}: what's changed, who to ask, where…  (c)"><button>Send</button></form>` : ""}
         <div class="actions">${src.actions.map(btn).join("")}
+          <div class="placemenu hidden" data-part="place"></div>
           <div class="snooze hidden" data-part="snooze">
             ${src.minutes ? `<button data-snooze="m30">30 min</button><button data-snooze="m60">1 hour</button>` : ""}<button data-snooze="1">Tomorrow</button><button data-snooze="mon">Monday</button><button data-snooze="7">Next week</button>
             <input type="date" min="${esc(data.today)}" aria-label="Snooze until">
@@ -221,10 +225,28 @@
       const t = current(); if (!t || !can(t, a)) return;
       if (a === "open") { const s = (t.sources || []).find((x) => x.link); if (s) window.open(s.link, "_blank", "noopener"); return; }
       if (a === "snooze") { part("snooze")?.classList.toggle("hidden"); return; }
+      const list = src.places && src.places(t, data, a);
+      if (list) return placeMenu(t, a, list);
       act(t, a, null, a === "star" ? null : LABEL[a]);
+    }
+    // where a task goes in an order, picked from the order itself: above one of its tasks, at the end, or later
+    function placeMenu(t, a, list) {
+      const box = part("place"); if (!box) return;
+      if (!box.classList.contains("hidden") && box.dataset.a === a) return box.classList.add("hidden");
+      box.dataset.a = a;
+      box.innerHTML = `<p class="meta">${list.length ? "Where in your order? Click the task it goes above." : "Your order is empty."}</p>`
+        + list.map((x, i) => `<button data-place="${i}" class="${x.blocked ? "blocked" : ""}"><span class="n">${i + 1}</span>${esc(x.title)}</button>`).join("")
+        + `<div class="ends"><button data-place="end" class="primary">${list.length ? "At the end" : "Start your order with it"}</button><button data-place="sort">To sort, for later</button></div>`;
+      box.classList.remove("hidden");
+      part("snooze")?.classList.add("hidden");
     }
     part("now").addEventListener("click", (e) => {
       const b = e.target.closest("button"); if (!b) return;
+      if (b.dataset.place !== undefined && current()) {
+        const at = b.dataset.place, a = part("place").dataset.a;
+        part("place").classList.add("hidden");
+        return act(current(), a, { at: /^\d+$/.test(at) ? +at : at }, LABEL[a]);
+      }
       if (b.dataset.a) nowAction(b.dataset.a);
       if (b.dataset.snooze && current()) act(current(), "snooze", snoozeDay(b.dataset.snooze), "Snoozed");
       if (b.dataset.act && current()) act(current(), b.dataset.act, b.dataset.value, null, true);
@@ -340,6 +362,7 @@
       else if (k === "c" && src.reply && Q && sel && opened !== sel) { opened = sel; render(); part("now").querySelector(".reply input")?.focus(); }
       else if (k === "c" && src.reply && part("now").querySelector(".reply input")) part("now").querySelector(".reply input").focus();
       else if (k === "r" && src.refresh) src.refresh();
+      else if (k === "Escape" && part("place") && !part("place").classList.contains("hidden")) part("place").classList.add("hidden");
       else if (k === "Escape") { if (Q && opened && part("snooze")?.classList.contains("hidden") !== false) { opened = null; render(); } else part("snooze")?.classList.add("hidden"); }
       else return;
       e.preventDefault();
