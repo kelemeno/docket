@@ -128,6 +128,14 @@ class Coupling(unittest.TestCase):
         self.assertEqual(by["lin-B-1"]["why"], "Nino asked in Slack")
         self.assertIn(slack, [s["link"] for s in by["lin-B-1"]["sources"]])
 
+    def test_one_you_touched_is_folded_in_too_with_its_notes_but_not_while_claude_answers(self):
+        n = {**tasks._new({"title": "Write the B-1 docs", "sources": [{"label": "o/r#1", "link": PR1}]}, DAY, NOW),
+             "mine": ["kind"], "notes": [{"at": NOW, "by": "you", "text": "there is a linear ticket"}]}
+        waiting = {**n, "id": "w1", "asked": NOW}
+        reg, by = synced(feed((issue("B-1", prs=[PR1]), None)), {}, [n, waiting])
+        self.assertEqual(sorted(by), ["lin-B-1", "w1"])  # w1 folds once Claude has answered its note
+        self.assertEqual(by["lin-B-1"]["notes"][-1]["text"], "there is a linear ticket")
+
     def test_a_key_in_the_title_couples_and_yours_stay(self):
         mine = {**tasks._new({"title": "A-1: write the migration notes"}, DAY, NOW), "mine": ["title"]}
         _, by = synced(feed((issue("A-1"), None)), {}, [mine])
