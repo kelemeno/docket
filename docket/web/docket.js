@@ -240,7 +240,7 @@
       box.dataset.a = a;
       box.innerHTML = `<p class="meta">${list.length ? "Where in your order? Click the task it goes above." : "Your order is empty."}</p>`
         + list.map((x, i) => `<button data-place="${i}" class="${x.blocked ? "blocked" : ""}"><span class="n">${i + 1}</span>${esc(x.title)}</button>`).join("")
-        + `<div class="ends"><button data-place="end" class="primary">${list.length ? "At the end" : "Start your order with it"}</button><button data-place="sort">To sort, for later</button></div>`;
+        + `<div class="ends"><button data-place="end" class="primary">${list.length ? "At the end" : "Start your order with it"}</button></div>`;
       box.classList.remove("hidden");
       part("snooze")?.classList.add("hidden");
     }

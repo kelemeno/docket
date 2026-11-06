@@ -35,19 +35,18 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   in its place, with the time, until then),
   **Waiting** (on someone else; on a waiting task it's **Not waiting**, back to open), **Drop**, **Open** the source, **→ Work** / **→ Triage** (`m`: real
   work or not; the refresh leaves your choice alone). **→ Work** shows your Work order: click the task
-  it goes above, **At the end**, or **To sort** to place it later, **Undo**.
+  it goes above, or **At the end**, **Undo**.
 - **Two tabs** (`1`, `2`).
-  - **Triage** is the back-and-forth for today, P0 first: Now on top, then **Quick** (under 10 minutes)
-    and **Your agent**, its quick asks. **Waiting**, **Later** and **Handled today** are folded below.
-    Add your own tasks here.
-  - **Work** is your real work as one list in the order you'll do it: one task per Linear issue and
-    the deep work that isn't on Linear yet ([below](#work-linear)). What isn't in your order yet comes
-    first, under **To sort**, then a divider and **Your order**. Drag a row where it goes: onto the
-    divider puts it first, between two rows of your order puts it there, onto To sort takes it out
-    again; the page scrolls while you hold it near an edge. **To top** / **To end** and `Shift+J` /
-    `Shift+K` work too. Rows waiting on someone, or snoozed or planned for a later day, stay in their place, greyed (there's no Waiting or Later fold here),
-    and the first one you can act on is marked **next**. A row says its Linear issue (or links to
-    create one) and what your agent is doing on it. Click a row (or `space`) to open it in place: the
+  - **Triage** is where everything new lands, P0 first: Now on top, then **Quick** (under 10 minutes),
+    **New for Work** (a Linear issue or review just asked of you, deep work the refresh found: **→ Work**
+    puts it in its place in your order) and **Your agent**, its quick asks. **Waiting**, **Later** and
+    **Handled today** are folded below. Add your own tasks here.
+  - **Work** is your real work as one list in the order you'll do it, only what you put there: one
+    task per Linear issue and the deep work that isn't on Linear yet ([below](#work-linear)). Drag a
+    row by its grip to reorder (the page scrolls while you hold it near an edge), or `Shift+J` /
+    `Shift+K`. Rows waiting on someone, or snoozed or planned for a later day, stay in their place, greyed (there's no Waiting or Later fold here),
+    and the first one you can act on is marked **next**. A row says its Linear issue and its status there
+    (In Progress, In Review…), or links to create one, and what your agent is doing on it. Click a row (or `space`) to open it in place: the
     next step, the links, the note to Claude, the buttons, and **Takes** (15 minutes to 4 hours) for
     the day's plan.
 - **On the side:**

@@ -178,3 +178,4 @@ body.dragging-row ::selection { background: transparent; }
 .placemenu .n { display: inline-block; width: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .placemenu .ends { display: flex; gap: 6px; margin-top: 6px; }
 .placemenu .ends button { padding: 3px 10px; font-size: 13px; }
+.lstate { border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; font-size: 11px; color: var(--text-2); }
