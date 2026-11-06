@@ -228,7 +228,10 @@ window.docketPage = function (el, opts = {}) {
               `<span class="${t.est ? "" : "meta"}">${dur(est(t))}</span>`].filter(Boolean).join(" · ");
     }
     const pick = `<div class="estpick"><span class="meta">Takes</span>${EST.map((m) => `<button data-act="est" data-value="${m}"${t.est === m ? ' class="on"' : ""}>${dur(m)}</button>`).join("")}${t.est ? "" : `<span class="meta">(${dur(est(t))} until you say)</span>`}</div>`;
-    const agentLines = helpers.map((x) => `<p class="why">Your agent: ${esc(x.next)}${(x.sources || [])[0] && x.sources[0].link ? ` · <a href="${esc(x.sources[0].link)}" target="_blank" rel="noopener">${esc(x.sources[0].label)} ↗</a>` : ""}</p>`).join("");
+    // each agent task on this work, with all its links (DM thread, PR, agents thread) the task doesn't have itself
+    const has = new Set((t.sources || []).map((s) => s.link));
+    const agentLines = helpers.map((x) => `<p class="why">Your agent: ${[esc(x.next), ...(x.sources || []).filter((s) => s.link && !has.has(s.link))
+      .map((s) => `<a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.label)} ↗</a>`)].join(" · ")}</p>`).join("");
     if (i) return `<div class="chips"><span class="chip">${esc(i.key)}</span><span class="chip">${ROLE[i.role] || ""}</span><span class="chip">${esc(i.state)}</span></div>` + agentLines + pick;
     if (t.issue) return agentLines + pick;
     return agentLines + pick + `<p class="meta" style="color:var(--warn)">Not on Linear · <a href="${esc(create)}" target="_blank" rel="noopener">create it ↗</a> · or name its key in a note</p>`;
