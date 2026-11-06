@@ -134,7 +134,7 @@
       if (!t) { sel = null; put(part("now"), `<h2>Now</h2>${src.empty(data)}`); return; }
       sel = t.id;
       const btn = (a) => !can(t, a) || a === "open" && !(t.sources || []).some((s) => s.link) ? ""
-        : `<button data-a="${a}"${a === "done" ? ' class="primary"' : ""}>${a === "star" && t.star ? "Unstar" : NAMES[a]}<kbd>${KEYS[a]}</kbd></button>`;
+        : `<button data-a="${a}"${a === "done" ? ' class="primary"' : ""}>${a === "star" && t.star ? "Unstar" : a === "snooze" && Q ? "Remind me" : NAMES[a]}<kbd>${KEYS[a]}</kbd></button>`;
       const ses = (t.sessions || []).map((s) => `<span class="chip">⌁ ${esc(s)}</span>`).join("");
       if (!put(part("now"), `${Q ? "" : "<h2>Now</h2>"}
         ${Q ? "" : `<p class="title">${esc(t.title)}</p>`}
@@ -147,7 +147,7 @@
         <div class="actions">${src.actions.map(btn).join("")}
           <div class="placemenu hidden" data-part="place"></div>
           <div class="snooze hidden" data-part="snooze">
-            ${src.minutes ? `<button data-snooze="m30">30 min</button><button data-snooze="m60">1 hour</button>` : ""}<button data-snooze="1">Tomorrow</button><button data-snooze="mon">Monday</button><button data-snooze="7">Next week</button>
+            ${src.minutes ? `<button data-snooze="m15">15 min</button><button data-snooze="m30">30 min</button><button data-snooze="m60">1 hour</button><button data-snooze="m120">2 hours</button>` : ""}<button data-snooze="1">Tomorrow</button><button data-snooze="mon">Monday</button><button data-snooze="7">Next week</button>
             <input type="date" min="${esc(data.today)}" aria-label="Snooze until">
           </div></div>`)) return;  // unchanged: the box, what's typed in it and the caret stay as they are
       const input = part("now").querySelector(".reply input");
@@ -162,7 +162,7 @@
         if (t.sep) return `<div class="qsep${t.sep === "order" ? " drop" : ""}"${t.sep === "order" ? " data-sep" : ""}>${esc(t.title)} <span class="count">${t.n || ""}</span>${t.hint ? ` <span class="meta">${esc(t.hint)}</span>` : ""}</div>`;
         const s0 = (t.sources || [])[0];
         const sub = opts.queue ? [more(t, "row"), t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "", t.status === "waiting" ? "waiting on others" : "",
-                                  t.status === "open" && !due(t) ? (t.until && t.until.startsWith(data.today) ? "until " + esc(t.until.slice(11)) : "from " + esc(day(t.do))) : ""].filter(Boolean).join(" · ")
+                                  t.status === "open" && !due(t) ? (t.until && t.until.startsWith(data.today) ? "⏰ " + esc(t.until.slice(11)) : "from " + esc(day(t.do))) : ""].filter(Boolean).join(" · ")
           : [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
                      t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "",
                      opts.closed ? (t.status === "dropped" ? "dropped" : ["claude", "gh"].includes(t.closed_by) ? "done: " + esc(t.evidence) : "done") : "", more(t, "row")]
@@ -170,6 +170,7 @@
         const subline = sub + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`
           : opts.unsorted && opts.unsorted.has(t.id) ? `<button data-row="top" title="First in your order">To top</button><button data-row="end" title="Last in your order">To end</button>`
+          : opts.queue && src.minutes ? `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="m15" title="Remind me in 15 minutes">15m</button><button data-row="m60" title="Remind me in an hour">1h</button>`
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
         const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && (t.status === "waiting" || !due(t)) ? " blocked" : "") + (opts.unsorted?.has(t.id) ? " tosort" : "")
           + (t === next ? " next" : "") + (opts.queue && t.id === opened ? " opened" : "");
@@ -215,6 +216,8 @@
       sel = t.id; render(); toast("Undone");
     }
     const current = () => data && data.tasks.find((x) => x.id === sel);
+    // "Reminder at 10:15": what a queue says when a row is put off for a while
+    const remindLabel = (v) => "Reminder at " + snoozeDay(v).slice(11);
     function snoozeDay(v) {
       if (v[0] === "m") return stamp(new Date(Date.now() + +v.slice(1) * 60e3));
       const d = new Date(data.today + "T12:00");
@@ -248,7 +251,7 @@
         return act(current(), a, { at: /^\d+$/.test(at) ? +at : at }, LABEL[a]);
       }
       if (b.dataset.a) nowAction(b.dataset.a);
-      if (b.dataset.snooze && current()) act(current(), "snooze", snoozeDay(b.dataset.snooze), "Snoozed");
+      if (b.dataset.snooze && current()) act(current(), "snooze", snoozeDay(b.dataset.snooze), Q && b.dataset.snooze[0] === "m" ? remindLabel(b.dataset.snooze) : "Snoozed");
       if (b.dataset.act && current()) act(current(), b.dataset.act, b.dataset.value, null, true);
     });
     part("now").addEventListener("submit", async (e) => {
@@ -266,6 +269,7 @@
       const b = e.target.closest("button");
       if (b && b.dataset.row === "done") return act(t, "done", null, "Done");
       if (b && b.dataset.row === "snooze1") return act(t, "snooze", snoozeDay(1), "Snoozed");
+      if (b && /^m\d+$/.test(b.dataset.row || "")) return act(t, "snooze", snoozeDay(b.dataset.row), remindLabel(b.dataset.row));
       if (b && b.dataset.row === "restore") return act(t, "restore", { ...t, status: "open", done_at: null }, "Back on the list");
       if (b && (b.dataset.row === "top" || b.dataset.row === "end")) {
         const ids = groups().lists.queue.map((x) => x.id);
