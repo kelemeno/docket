@@ -124,6 +124,16 @@ class Notes(unittest.TestCase):
             self.assertEqual("You can only read" in ask.call_args[0][0], not act)
 
 
+    def test_a_note_is_told_how_to_read_github(self):
+        class Now:
+            def __init__(self, target, daemon): self.target = target
+            def start(self): self.target()
+        with mock.patch.object(app, "_ask", return_value={"answer": "Found it."}) as ask, mock.patch.object(app, "_which", return_value="/bin/gh"), \
+             mock.patch.object(app.threading, "Thread", Now):
+            app.Page().reply(self.t["id"], "check whether Kalman has a PR for this")
+        self.assertIn("one plain command at a time, no pipes", ask.call_args[0][0])
+
+
 class Sources(unittest.TestCase):
     def test_one_link_per_slack_conversation_the_latest_under_the_first_label(self):
         dm = "https://x.enterprise.slack.com/archives/C1/p100"
@@ -233,6 +243,11 @@ class Tools(unittest.TestCase):
              mock.patch("subprocess.run", run):
             app._ask("hi", act=act)
         return seen
+
+    def test_gh_lookups_are_allowed_even_with_a_setup_from_before_them(self):
+        allow = self.ran(False)["allow"]
+        for t in ("Bash(gh search repos:*)", "Bash(gh repo view:*)", "Bash(gh pr list:*)"):
+            self.assertEqual(allow.count(t), 1)
 
     def test_a_refresh_only_reads_and_a_note_may_send_but_never_delete_or_share(self):
         read = self.ran(False)
