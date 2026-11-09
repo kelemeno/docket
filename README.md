@@ -38,16 +38,21 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   work or not; the refresh leaves your choice alone). **→ Work** shows your Work order: click the task
   it goes above, or **At the end**, **Undo**.
 - **Two tabs** (`1`, `2`).
-  - **Triage** is where everything new lands, P0 first: Now on top, then **Quick** (under 10 minutes),
-    **New for Work** (a Linear issue or review just asked of you, deep work the refresh found: **→ Work**
-    puts it in its place in your order) and **Your agent**, its quick asks. **Waiting**, **Later** and
-    **Handled today** are folded below. Add your own tasks here.
+  - **Triage** is the back-and-forth, and where everything new lands, P0 first: Now on top, then **Up
+    next**. New work (a Linear issue or review just asked of you, deep work the refresh found, a new
+    task of your agent's) is marked **deep work · → Work**: **→ Work** puts it in its place in your
+    order. It stays in Up next, greyed, while it waits, until you place it. **Waiting**, **Later** and
+    **Handled today** fold the rest below. Add your own tasks here.
   - **Work** is your real work as one list in the order you'll do it, only what you put there: one
-    task per Linear issue and the deep work that isn't on Linear yet ([below](#work-linear)). Drag a
+    row per piece of work, with whoever is on it. A Linear issue or review, deep work that isn't on
+    Linear yet ([below](#work-linear)), and everything your agent does: its task for an issue shows on
+    the issue's row; a row of its own is greyed while the agent works or waits, and active when it's
+    your move (say go, sign, answer). The Claude sessions working on it show on the row too. Drag a
     row by its grip to reorder (the page scrolls while you hold it near an edge), or `Shift+J` /
     `Shift+K`. Rows waiting on someone, or snoozed or planned for a later day, stay in their place, greyed (there's no Waiting or Later fold here),
     and the first one you can act on is marked **next**. A row says its Linear issue and its status there
-    (In Progress, In Review…), or links to create one, and what your agent is doing on it. Click a row (or `space`) to open it in place: the
+    (In Progress, In Review…), or links to create one, what your agent is doing on it (working, for how long; your move;
+    waiting on whom) and the Claude sessions on it. Click a row (or `space`) to open it in place: the
     next step, the links, the note to Claude, the buttons, and **Takes** (15 minutes to 4 hours) for
     the day's plan.
 - **On the side:**
@@ -56,8 +61,9 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
     you (conflicts, CI failing, changes requested), waiting, and drafts. **Reviewing** groups the PRs
     you're asked to review or have reviewed: review requested, new commits since your review, waiting
     on the author, approved.
-  - Your **Claude Code sessions** from the last two days, the ones waiting for you first. On a Mac,
-    a session the Claude desktop app runs opens there when you click it.
+  - **Your agent** and **Sessions not on your list**, only when there's something no row has: an agent
+    task on nothing in your list, or a Claude session no task claims (**Make it a task** brings it to
+    Triage, claiming it). aag's state (off, paused, offline, what to sign) shows there too.
 - Keys: `j`/`k` move · `d` done · `s` snooze · `w` waiting · `x` drop · `o` open · `c` reply ·
   `u` undo · `n` new task · `r` refresh.
 

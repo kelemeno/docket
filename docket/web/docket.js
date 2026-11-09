@@ -16,6 +16,8 @@
 //     actions: ["done", "snooze", "waiting", "drop", "open", "star"]   the buttons this source has; and
 //                         "work" / "triage" for a page with those two views (act gets them as they are)
 //     can(task, action): bool         optional: a button this task doesn't get
+//     listed(task, data): bool        optional: a task that stays in the lists while it waits or is put off
+//                         (greyed there, not folded away): something still to decide on
 //     places(task, data, action): [{id, title, blocked}] or null   optional: the button opens a list
 //                         to say where the task goes (above one of these, at the end, or "sort" for
 //                         later); act then gets {at: index | "end" | "sort"}
@@ -97,9 +99,10 @@
     };
     function groups() {
       const tasks = (data.tasks || []).filter(show);
-      const open = tasks.filter((t) => t.status === "open" && due(t)).sort(rank);
-      const waiting = tasks.filter((t) => t.status === "waiting").sort(rank);
-      const later = tasks.filter((t) => t.status === "open" && !due(t));
+      const kept = (t) => !Q && src.listed && t.status !== "done" && t.status !== "dropped" && src.listed(t, data);
+      const open = tasks.filter((t) => (t.status === "open" && due(t)) || kept(t)).sort(rank);
+      const waiting = tasks.filter((t) => t.status === "waiting" && !kept(t)).sort(rank);
+      const later = tasks.filter((t) => t.status === "open" && !due(t) && !kept(t));
       return {
         // a queue has them all in one list: waiting and later ones greyed in their place
         open, lists: Q ? queued([...open, ...waiting, ...later].sort(rank)) : Object.fromEntries(LISTS.map((l) => [l.key, l.pick(open)])),
@@ -137,7 +140,8 @@
     }
     function renderNow(g) {
       const t = Q ? data.tasks.find((x) => x.id === opened && (x.status === "open" || x.status === "waiting") && show(x))
-        : data.tasks.find((x) => x.id === sel && (x.status === "open" || x.status === "waiting") && show(x)) || g.open[0];
+        : data.tasks.find((x) => x.id === sel && (x.status === "open" || x.status === "waiting") && show(x))
+          || g.open.find((x) => x.status === "open" && due(x)) || g.open[0];  // Now: the first you can act on
       if (Q && !t) { opened = null; nowEl.remove(); return; }
       // a reload mustn't eat a reply you're typing
       const box = part("now").querySelector(".reply input"), draft = box && box.dataset.id === (t && t.id) ? box.value : "",
@@ -183,7 +187,7 @@
           : opts.unsorted && opts.unsorted.has(t.id) ? `<button data-row="top" title="First in your order">To top</button><button data-row="end" title="Last in your order">To end</button>`
           : opts.queue && src.minutes ? `<button data-row="done" title="Done" aria-label="Done">✓</button>` + REMIND.map(([m, l, w]) => `<button data-row="m${m}" title="Remind me in ${w}">${l}</button>`).join("")
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
-        const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && (t.status === "waiting" || !due(t)) ? " blocked" : "") + (opts.unsorted?.has(t.id) ? " tosort" : "")
+        const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + ((opts.queue || (src.listed && !opts.closed)) && (t.status === "waiting" || !due(t)) ? " blocked" : "") + (opts.unsorted?.has(t.id) ? " tosort" : "")
           + (t === next ? " next" : "") + (opts.queue && t.id === opened ? " opened" : "");
         return `<div class="row${cls}" data-id="${esc(t.id)}">${opts.queue ? `<span class="grip" title="Drag to reorder (or Shift+J / Shift+K)">⠿</span>` : ""}${pri(t)}
           <div class="body"><div class="t">${t === next ? `<span class="nextmark">next</span>` : ""}${esc(t.title)}</div>${subline ? `<div class="s">${subline}</div>` : ""}</div>

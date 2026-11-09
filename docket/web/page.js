@@ -126,11 +126,12 @@ window.docketPage = function (el, opts = {}) {
     const row = (s) => `<div class="ses"><span class="dot ${esc(s.state)}"></span><div><div>${s.link
       ? `<a href="${esc(s.link)}" title="Open in Claude">${esc(s.title)}</a>` : esc(s.title)}</div>
       <div class="s">${esc(s.project)}${s.branch && s.branch !== "HEAD" ? " · " + esc(s.branch) : ""} · ${ago(s.at)}${taskOf[s.title] ? " · for: " + esc(taskOf[s.title]) : ""}</div></div></div>`;
-    const part = (title, list) => list.length ? `<div class="sub">${title}</div>` + list.map(row).join("") : "";
-    const agents = all.length - mine.length;
-    return (part("Waiting for you", mine.filter((s) => s.state === "waiting")) + part("Running", mine.filter((s) => s.state === "running"))
-      + part("Stopped mid-turn", mine.filter((s) => s.state === "stopped")) || `<p class="empty">No sessions in the last two days.</p>`)
-      + (agents ? `<p class="meta" style="margin:8px 0 0">+ ${agents} agent run${agents > 1 ? "s" : ""}</p>` : "");
+    // the ones a task claims show on its row; the rest here, to make into a task (it comes to Triage)
+    const loose = mine.filter((s) => !taskOf[s.title]);
+    const part = (title, list) => list.length ? `<div class="sub">${title}</div>` + list.map((s) => row(s).replace(/<\/div><\/div>$/,
+      `<button class="mk" data-session-task="${esc(s.title)}">Make it a task</button></div></div>`)).join("") : "";
+    return part("Waiting for you", loose.filter((s) => s.state === "waiting")) + part("Running", loose.filter((s) => s.state === "running"))
+      + part("Stopped mid-turn", loose.filter((s) => s.state === "stopped"));
   }
   // Pull requests from the last two weeks, read with gh on this computer: yours by what they need, and the
   // ones you review by where they stand from your side. The tab is remembered in this browser.
@@ -168,7 +169,8 @@ window.docketPage = function (el, opts = {}) {
     if (!f) return head || `<p class="empty">Reading your agent…</p>`;
     // as on the list (aag.py finished): a review the agents agree on is done for you, and done shows for the day
     const col = (t) => t.column === "done" || (t.role === "reviewer" && t.status === "agents_done" && t.column !== "needs_you") ? "done" : t.column;
-    const shown = f.tasks.filter((t) => col(t) !== "done" || new Date(t.statusAt || t.updatedAt).toLocaleDateString("sv") === data.today);
+    const listed = new Set((data.tasks || []).map((x) => x.id));  // on your list: shown on its row instead
+    const shown = f.tasks.filter((t) => !listed.has("aag-" + t.id) && (col(t) !== "done" || new Date(t.statusAt || t.updatedAt).toLocaleDateString("sv") === data.today));
     const ln = (href, text) => href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${text}</a>` : "";
     const row = (t, tone) => {
       const p = t.pr;
@@ -184,14 +186,28 @@ window.docketPage = function (el, opts = {}) {
       const l = shown.filter((t) => col(t) === column);
       return l.length ? `<div class="sub">${title}</div>` + l.map((t) => row(t, tone)).join("") : "";
     }).join("");
-    return head + (body || `<p class="empty">Nothing for your agent this week.</p>`)
-      + `<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
+    if (!body && !head) return "";  // everything your agent does is on your list
+    return head + body + `<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
   }
-  // Two views of one list. Work: real work, one task per Linear issue (linear.py) in Linear's order,
-  // and the deep work that isn't on Linear yet, your agent's too. Triage: the rest, the quick
-  // back-and-forth, with your agent's quick asks in a list of their own; its task for an issue shows
-  // with the issue. The tab is remembered in this browser.
-  const work = (t) => !!(t.linear || (t.issue && !t.aag) || (t.kind === "deep" && !t.issue));
+  // Two views of one list. Work: your real work in your order, one row per piece of work, with whoever is on
+  // it: a Linear issue or review, deep work that isn't on Linear yet, and everything your agent does (its
+  // task for an issue shows on the issue's row). Triage: the back-and-forth, and new work to place. The tab
+  // is remembered in this browser.
+  const work = (t) => !!(t.linear || (t.issue && !t.aag) || (t.aag && !t.issue) || (t.kind === "deep" && !t.issue));
+  // who is on a piece of work: your agent's run (aag's feed) and the Claude sessions the refresh tied to it
+  const feedOf = (d, t) => t.aag && (((d.aag || {}).feed || {}).tasks || []).find((x) => "aag-" + x.id === t.id);
+  const sessionsOf = (d, t) => (t.sessions || []).map((n) => (d.sessions || []).find((s) => s.title === n && !s.agent)).filter(Boolean);
+  const mins = (since) => { const m = Math.round((Date.now() - Date.parse(since)) / 60e3); return m < 60 ? m + " min" : Math.round(m / 60) + " h"; };
+  function whoIsOn(d, t) {
+    const f = feedOf(d, t), out = [];
+    if (f && f.now) out.push(`<span class="st go">agent working · ${mins(f.now.since)}</span>`);
+    else if (f && f.column === "needs_you") out.push(`<span class="st bad">agent: your move</span>`);
+    else if (f && f.waiting) out.push(`agent waiting on ${esc(f.waiting.who === "owner" ? "you" : f.waiting.what || f.waiting.who)}`);
+    else if (t.aag) out.push("your agent");
+    const ses = sessionsOf(d, t), running = ses.filter((x) => x.state === "running").length;
+    if (ses.length) out.push(`⌁ ${ses.length} session${ses.length > 1 ? "s" : ""}${running ? ` (${running} running)` : ""}`);
+    return out;
+  }
   // Work has what you put in your order; everything else, new work too, is in Triage, where you decide on
   // it (→ Work puts it in its place). Your agent's task for an issue shows on the issue's card.
   const inWork = (t, d) => work(t) && place(d, t) < Infinity;
@@ -200,7 +216,7 @@ window.docketPage = function (el, opts = {}) {
   const level = (d, t) => { const i = issueOf(d, t); return i ? [i.linear.level, i.linear.sort] : [9, 0]; };
   const ROLE = { assignee: "assigned to you", reviewer: "your review" };
   // how long a task takes, for the day's plan: yours (t.est, minutes), or 90 minutes of deep work, 10 quick
-  const est = (t) => t.est || (work(t) ? 90 : 10);
+  const est = (t) => t.est || (t.aag ? 15 : work(t) ? 90 : 10);  // your agent does the work; yours is a check or a word
   const dur = (m) => m < 60 ? m + "m" : m % 60 ? (m / 60).toFixed(1) + "h" : m / 60 + "h";
   const EST = [15, 30, 60, 120, 240];
   // A new Linear issue for a task, filled in (Linear's linear.new parameters): your team, you as the assignee, its
@@ -230,7 +246,7 @@ window.docketPage = function (el, opts = {}) {
       const on = i || (t.issue && (issueOf(d, t) || {}).linear);
       const issue = on ? `${esc(on.key || t.issue)} <span class="lstate">${esc(on.state || "")}</span>${on.role === "reviewer" ? " · your review" : ""}` : t.issue && esc(t.issue);
       return [issue || `<span style="color:var(--warn)">not on Linear</span> <a href="${esc(create)}" target="_blank" rel="noopener">create ↗</a>`,
-              t.aag && "your agent", ...helpers.map((x) => `agent: ${esc(x.next)}`),
+              ...whoIsOn(d, t), ...helpers.map((x) => `agent: ${esc(x.next)}`),
               `<span class="${t.est ? "" : "meta"}">${dur(est(t))}</span>`].filter(Boolean).join(" · ");
     }
     const pick = `<div class="estpick"><span class="meta">Takes</span>${EST.map((m) => `<button data-act="est" data-value="${m}"${t.est === m ? ' class="on"' : ""}>${dur(m)}</button>`).join("")}${t.est ? "" : `<span class="meta">(${dur(est(t))} until you say)</span>`}</div>`;
@@ -265,8 +281,10 @@ window.docketPage = function (el, opts = {}) {
       act: (t, action, value) => both(v, act(t, action, value)),
       reply: (t, text) => both(v, post("/reply", { id: t.id, text })),
       refresh: () => opts.run && opts.run.click(),
-      side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? `<section class="card"><h2>Your agent <span class="count">${((d.aag.feed || {}).tasks || []).filter((t) => t.column === "needs_you").length || ""}</span></h2>${agent(d)}</section>` : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section><section class="card"><h2>Claude sessions</h2>${sessions(d)}</section>`,
+      side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? (x => x ? `<section class="card"><h2>Your agent</h2>${x}</section>` : "")(agent(d)) : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section>${(x => x ? `<section class="card"><h2>Sessions not on your list</h2>${x}</section>` : "")(sessions(d))}`,
       async sideClick(e, d) {
+        const mk = e.target.closest("[data-session-task]");
+        if (mk) return both(v, post("/task", { action: "add", value: mk.dataset.sessionTask, kind: "deep", sessions: [mk.dataset.sessionTask] }));
         if (e.target.closest("[data-order-reset]")) {
           e.preventDefault();
           if (!confirm("Clear your order? Its tasks go back to Triage (New for Work), to place again.")) return;
@@ -322,10 +340,10 @@ window.docketPage = function (el, opts = {}) {
     ...base("triage"), show: triage, rank: byOrder,
     actions: [...base("triage").actions, "work"],
     places: (t, d, a) => a === "work" ? workOrder(d, t).map((x) => ({ id: x.id, title: x.title, blocked: x.status === "waiting" || (x.do || d.today) > d.today })) : null,
-    lists: [{ key: "quick", title: "Quick · under 10 min", empty: "No quick items today.", pick: (l) => l.filter((t) => !t.aag && !work(t)) },
-            { key: "new", title: "New for Work: → Work puts it in your order", empty: "No new work.", pick: (l) => l.filter(work) },
-            { key: "agent", title: "Your agent", empty: "Your agent needs nothing from you.", pick: (l) => l.filter((t) => t.aag && !work(t)) }],
-    more: (t, d, where) => work(t) ? moreWork(t, d, where) : "",
+    lists: [{ key: "next", title: "Up next", empty: "Nothing else due today.", pick: (l) => l }],
+    listed: (t) => work(t),  // new work to place stays here, greyed while it waits, not folded away
+    // new work to place: marked, with what Work would show; → Work puts it in its place in your order
+    more: (t, d, where) => work(t) ? (where === "row" ? `<span class="chip">deep work · → Work</span> ` : "") + moreWork(t, d, where) : "",
     add: (text, kind) => both("triage", post("/task", { action: "add", value: text, kind })),
     empty: (d) => d.refreshed ? `<p class="title">Nothing due today.</p><p class="meta">Everything open is waiting on others or planned for later. Real work is under Work.</p>`
       : `<p class="title">No tasks yet.</p><p class="meta">The first refresh reads the last 3 days of whatever your Claude Code is connected to: Slack, email, calendar, GitHub, Linear, Notion. It takes a few minutes.</p>`,
@@ -333,7 +351,7 @@ window.docketPage = function (el, opts = {}) {
   views.work = docket(box("work"), {
     ...base("work"), show: inWork,
     actions: [...base("work").actions, "triage"],
-    can: (t, a) => a !== "triage" || (!t.linear && !t.issue),  // an issue's work stays with the issue
+    can: (t, a) => a !== "triage" || (!t.linear && !t.issue && !t.aag),  // an issue's and your agent's work stay Work
     queue: { heading: "Your order", empty: "Nothing in your order yet: new work comes in Triage, where → Work puts it in its place." },
     // your order as it is now, and what it had that isn't shown (snoozed, later) stays at the end
     order: (ids, shown) => both("work", post("/task", { id: ids[0] || shown[0], action: "order", value: [...ids, ...(views.work.data.order || []).filter((i) => !shown.includes(i))] })),

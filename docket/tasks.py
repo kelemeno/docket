@@ -244,15 +244,16 @@ def roll(reg, today):
     return True
 
 
-def add(title, kind, today, now):
-    """A task you type in yourself: it's all yours, so the refresh only adds links and sessions to it."""
+def add(title, kind, today, now, sessions=None):
+    """A task you type in yourself (or make from a Claude session, which it then claims): it's all yours,
+    so the refresh only adds links and sessions to it."""
     title = _text(title, 160)
     if not title:
         raise ValueError("a task needs a title")
     with LOCK:
         reg = load()
         task = _new({"title": title, "kind": kind if kind in KIND else "quick", "priority": "P1",
-                     "sources": [{"label": "added by you"}]}, today, now)
+                     "sources": [{"label": "added by you"}], "sessions": sessions or []}, today, now)
         task["mine"] = ["title", "kind", "priority", "do", "status"]
         reg["tasks"].append(task)
         save(reg)

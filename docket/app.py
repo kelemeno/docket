@@ -494,7 +494,7 @@ def serve(port=PORT, index=None, routes=None):
                     if url.path == "/reply":
                         page.reply(str(body.get("id")), body.get("text"))
                     elif body.get("action") == "add":
-                        tasks.add(body.get("value"), body.get("kind"), store.today(), store.now())
+                        tasks.add(body.get("value"), body.get("kind"), store.today(), store.now(), body.get("sessions"))
                     else:
                         tasks.act(str(body.get("id")), body.get("action"), body.get("value"), store.today(), store.now())
                 except (KeyError, ValueError, AttributeError) as e:

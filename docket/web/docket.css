@@ -179,3 +179,4 @@ body.dragging-row ::selection { background: transparent; }
 .placemenu .ends { display: flex; gap: 6px; margin-top: 6px; }
 .placemenu .ends button { padding: 3px 10px; font-size: 13px; }
 .lstate { border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; font-size: 11px; color: var(--text-2); }
+.ses .mk { margin-top: 4px; padding: 1px 8px; font-size: 12px; }

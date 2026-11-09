@@ -205,6 +205,13 @@ class Estimate(unittest.TestCase):
             tasks.act(t["id"], "est", "7", DAY, NOW)
 
 
+class FromSession(unittest.TestCase):
+    def test_a_task_made_from_a_session_claims_it(self):
+        tasks.save({"tasks": []})
+        reg = tasks.add("Prividium local setup", "deep", DAY, NOW, ["Prividium local setup"])
+        self.assertEqual((reg["tasks"][0]["kind"], reg["tasks"][0]["sessions"]), ("deep", ["Prividium local setup"]))
+
+
 class Kind(unittest.TestCase):
     def test_moving_a_task_to_work_is_yours_and_the_refresh_leaves_it(self):
         t = task()
