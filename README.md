@@ -32,7 +32,7 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
   To sort, after confirmation). The plan is
   worked out again as the day goes.
 - **Now:** **Done**, **Snooze** (15 or 30 minutes, an hour or two, tomorrow, Monday, next week, a date;
-  in Work it's **Remind me**, and a row's **15m** / **1h** put it off from the list: it stays greyed
+  in Work it's **Remind me**, and a row's **15m** / **30m** / **1h** / **2h** / **4h** / **1d** put it off from the list: it stays greyed
   in its place, with the time, until then),
   **Waiting** (on someone else; on a waiting task it's **Not waiting**, back to open), **Drop**, **Open** the source, **→ Work** / **→ Triage** (`m`: real
   work or not; the refresh leaves your choice alone). **→ Work** shows your Work order: click the task

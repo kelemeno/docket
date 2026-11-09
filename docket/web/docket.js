@@ -40,6 +40,8 @@
   const LABEL = { done: "Done", drop: "Dropped", waiting: "Waiting on others", snooze: "Snoozed", star: "Starred",
                   work: "Moved to Work", triage: "Moved to Triage" };
   const KEYS = { done: "d", snooze: "s", waiting: "w", drop: "x", open: "o", star: "t", work: "m", triage: "m" };
+  // a queue row's Remind me buttons: minutes, label, and what the title says
+  const REMIND = [[15, "15m", "15 minutes"], [30, "30m", "30 minutes"], [60, "1h", "an hour"], [120, "2h", "2 hours"], [240, "4h", "4 hours"], [1440, "1d", "a day"]];
   const NAMES = { done: "Done", snooze: "Snooze", waiting: "Waiting", drop: "Drop", open: "Open", star: "★ Today",
                   work: "→ Work", triage: "→ Triage" };
 
@@ -147,7 +149,7 @@
         <div class="actions">${src.actions.map(btn).join("")}
           <div class="placemenu hidden" data-part="place"></div>
           <div class="snooze hidden" data-part="snooze">
-            ${src.minutes ? `<button data-snooze="m15">15 min</button><button data-snooze="m30">30 min</button><button data-snooze="m60">1 hour</button><button data-snooze="m120">2 hours</button>` : ""}<button data-snooze="1">Tomorrow</button><button data-snooze="mon">Monday</button><button data-snooze="7">Next week</button>
+            ${src.minutes ? `<button data-snooze="m15">15 min</button><button data-snooze="m30">30 min</button><button data-snooze="m60">1 hour</button><button data-snooze="m120">2 hours</button><button data-snooze="m240">4 hours</button>` : ""}<button data-snooze="1">Tomorrow</button><button data-snooze="mon">Monday</button><button data-snooze="7">Next week</button>
             <input type="date" min="${esc(data.today)}" aria-label="Snooze until">
           </div></div>`)) return;  // unchanged: the box, what's typed in it and the caret stay as they are
       const input = part("now").querySelector(".reply input");
@@ -162,7 +164,7 @@
         if (t.sep) return `<div class="qsep${t.sep === "order" ? " drop" : ""}"${t.sep === "order" ? " data-sep" : ""}>${esc(t.title)} <span class="count">${t.n || ""}</span>${t.hint ? ` <span class="meta">${esc(t.hint)}</span>` : ""}</div>`;
         const s0 = (t.sources || [])[0];
         const sub = opts.queue ? [more(t, "row"), t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "", t.status === "waiting" ? "waiting on others" : "",
-                                  t.status === "open" && !due(t) ? (t.until && t.until.startsWith(data.today) ? "⏰ " + esc(t.until.slice(11)) : "from " + esc(day(t.do))) : ""].filter(Boolean).join(" · ")
+                                  t.status === "open" && !due(t) ? (t.until ? "⏰ " + (t.until.startsWith(data.today) ? "" : esc(day(t.until.slice(0, 10))) + " ") + esc(t.until.slice(11)) : "from " + esc(day(t.do))) : ""].filter(Boolean).join(" · ")
           : [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
                      t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "",
                      opts.closed ? (t.status === "dropped" ? "dropped" : ["claude", "gh"].includes(t.closed_by) ? "done: " + esc(t.evidence) : "done") : "", more(t, "row")]
@@ -170,7 +172,7 @@
         const subline = sub + (t.asked ? ` · <span class="meta">${esc(ai)} is reading your note…</span>` : "");
         const quick = opts.closed ? `<button data-row="restore" title="Put it back">Undo</button>`
           : opts.unsorted && opts.unsorted.has(t.id) ? `<button data-row="top" title="First in your order">To top</button><button data-row="end" title="Last in your order">To end</button>`
-          : opts.queue && src.minutes ? `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="m15" title="Remind me in 15 minutes">15m</button><button data-row="m60" title="Remind me in an hour">1h</button>`
+          : opts.queue && src.minutes ? `<button data-row="done" title="Done" aria-label="Done">✓</button>` + REMIND.map(([m, l, w]) => `<button data-row="m${m}" title="Remind me in ${w}">${l}</button>`).join("")
           : `<button data-row="done" title="Done" aria-label="Done">✓</button><button data-row="snooze1" title="Tomorrow" aria-label="Snooze to tomorrow">→</button>`;
         const cls = (t.id === sel ? " sel" : "") + (opts.closed ? " closed" : "") + (opts.queue && (t.status === "waiting" || !due(t)) ? " blocked" : "") + (opts.unsorted?.has(t.id) ? " tosort" : "")
           + (t === next ? " next" : "") + (opts.queue && t.id === opened ? " opened" : "");
@@ -217,7 +219,7 @@
     }
     const current = () => data && data.tasks.find((x) => x.id === sel);
     // "Reminder at 10:15": what a queue says when a row is put off for a while
-    const remindLabel = (v) => "Reminder at " + snoozeDay(v).slice(11);
+    const remindLabel = (v) => { const at = snoozeDay(v); return "Reminder " + (at.startsWith(data.today) ? "at " + at.slice(11) : day(at.slice(0, 10)) + " " + at.slice(11)); };
     function snoozeDay(v) {
       if (v[0] === "m") return stamp(new Date(Date.now() + +v.slice(1) * 60e3));
       const d = new Date(data.today + "T12:00");
