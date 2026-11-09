@@ -230,6 +230,17 @@ window.docketPage = function (el, opts = {}) {
     if (links.length) q.set("links", links.join(","));
     return "https://linear.new?" + q;
   }
+  // A row's PRs, after its Linear issue: #2648, with its state as gh read it (open ones you author or review)
+  function prLinks(d, t) {
+    const urls = [...new Set((t.sources || []).map((s) => (s.link || "").match(/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/)?.[0]).filter(Boolean))];
+    if (!urls.length) return "";
+    const known = [...((d.prs || {}).items || []), ...((d.prs || {}).reviewing || [])];
+    const one = (u) => {
+      const p = known.find((x) => x.url === u), n = u.split("/").pop();
+      return `<a href="${esc(u)}" target="_blank" rel="noopener">#${esc(n)}</a>${p ? ` <span class="st ${PR[p.state] || ""}">${esc(p.state)}</span>` : ""}`;
+    };
+    return urls.slice(0, 3).map(one).join(" · ") + (urls.length > 3 ? ` +${urls.length - 3}` : "");
+  }
   // your agent's open tasks on the same work: its issue, or one of its PRs
   const prsOf = (t) => new Set((t.sources || []).map((s) => (s.link || "").match(/github\.com\/[^/]+\/[^/]+\/pull\/\d+/)?.[0]).filter(Boolean));
   function agentsOn(d, t) {
@@ -245,7 +256,7 @@ window.docketPage = function (el, opts = {}) {
       // the issue as Linear has it: its key and status (In Progress, In Review…), and whether it's your review
       const on = i || (t.issue && (issueOf(d, t) || {}).linear);
       const issue = on ? `${esc(on.key || t.issue)} <span class="lstate">${esc(on.state || "")}</span>${on.role === "reviewer" ? " · your review" : ""}` : t.issue && esc(t.issue);
-      return [issue || `<span style="color:var(--warn)">not on Linear</span> <a href="${esc(create)}" target="_blank" rel="noopener">create ↗</a>`,
+      return [issue || `<span style="color:var(--warn)">not on Linear</span> <a href="${esc(create)}" target="_blank" rel="noopener">create ↗</a>`, prLinks(d, t),
               ...whoIsOn(d, t), ...helpers.map((x) => `agent: ${esc(x.next)}`),
               `<span class="${t.est ? "" : "meta"}">${dur(est(t))}</span>`].filter(Boolean).join(" · ");
     }
