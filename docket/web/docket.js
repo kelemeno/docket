@@ -36,6 +36,15 @@
 (() => {
   const PRI = ["P0", "P1", "P2"];
   const day = (d) => new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  // A task's text with its PR references as links: owner/repo#123 (any case), and a bare #123 when the task's
+  // links name one GitHub repo. GitHub sends /pull/ to the issue when it's one.
+  const REF = /\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d+)\b|(^|[\s(,;:])#(\d+)\b/g;
+  function linked(text, t) {
+    const repos = new Set((t.sources || []).map((s) => (s.link || "").match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\//)?.[1]?.toLowerCase()).filter(Boolean));
+    const one = repos.size === 1 ? [...repos][0] : null;
+    const a = (repo, n, shown) => `<a href="https://github.com/${esc(repo.toLowerCase())}/pull/${n}" target="_blank" rel="noopener">${shown}</a>`;
+    return esc(text).replace(REF, (m, repo, n, pre, bare) => repo ? a(repo, n, m) : one ? pre + a(one, bare, "#" + bare) : m);
+  }
   const link = (s) => s.link ? `<a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.label)} ↗</a>` : esc(s.label);
   const LABEL = { done: "Done", drop: "Dropped", waiting: "Waiting on others", snooze: "Snoozed", star: "Starred",
                   work: "Moved to Work", triage: "Moved to Triage" };
@@ -140,7 +149,7 @@
       const ses = (t.sessions || []).map((s) => `<span class="chip">⌁ ${esc(s)}</span>`).join("");
       if (!put(part("now"), `${Q ? "" : "<h2>Now</h2>"}
         ${Q ? "" : `<p class="title">${esc(t.title)}</p>`}
-        ${t.next ? `<p class="next">→ ${esc(t.next)}</p>` : ""}${t.why ? `<p class="why">${esc(t.why)}</p>` : ""}
+        ${t.next ? `<p class="next">→ ${linked(t.next, t)}</p>` : ""}${t.why ? `<p class="why">${linked(t.why, t)}</p>` : ""}
         ${chips(t)}${more(t, "now")}
         ${(t.sources || []).length ? `<div class="links">${t.sources.map(link).join("")}</div>` : ""}
         ${ses ? `<div class="chips">${ses}</div>` : ""}
@@ -165,7 +174,7 @@
         const s0 = (t.sources || [])[0];
         const sub = opts.queue ? [more(t, "row"), t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "", t.status === "waiting" ? "waiting on others" : "",
                                   t.status === "open" && !due(t) ? (t.until ? "⏰ " + (t.until.startsWith(data.today) ? "" : esc(day(t.until.slice(0, 10))) + " ") + esc(t.until.slice(11)) : "from " + esc(day(t.do))) : ""].filter(Boolean).join(" · ")
-          : [t.next ? "→ " + esc(t.next) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
+          : [t.next ? "→ " + linked(t.next, t) : "", s0 ? link(s0) : "", opts.later ? (t.until && t.until.startsWith(data.today) ? "" : "on ") + esc(when(t)) : "",
                      t.rolled ? `<span style="color:var(--warn)">slipped ${t.rolled}×</span>` : "",
                      opts.closed ? (t.status === "dropped" ? "dropped" : ["claude", "gh"].includes(t.closed_by) ? "done: " + esc(t.evidence) : "done") : "", more(t, "row")]
           .filter(Boolean).join(" · ");
