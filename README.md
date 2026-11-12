@@ -61,9 +61,10 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
     you (conflicts, CI failing, changes requested), waiting, and drafts. **Reviewing** groups the PRs
     you're asked to review or have reviewed: review requested, new commits since your review, waiting
     on the author, approved.
-  - **Your agent** and **Sessions not on your list**, only when there's something no row has: an agent
-    task on nothing in your list, or a Claude session no task claims (**Make it a task** brings it to
-    Triage, claiming it). aag's state (off, paused, offline, what to sign) shows there too.
+  - **Your agent**, always: whether it's on (with how many of its tasks are on your rows, by who has
+    the move), off, paused or offline, what to sign, and any agent task on nothing in your list.
+  - **Sessions not on your list**, only when a Claude session no task claims (**Make it a task** brings
+    it to Triage, claiming it).
 - Keys: `j`/`k` move · `d` done · `s` snooze · `w` waiting · `x` drop · `o` open · `c` reply ·
   `u` undo · `n` new task · `r` refresh.
 

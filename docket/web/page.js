@@ -186,8 +186,12 @@ window.docketPage = function (el, opts = {}) {
       const l = shown.filter((t) => col(t) === column);
       return l.length ? `<div class="sub">${title}</div>` + l.map((t) => row(t, tone)).join("") : "";
     }).join("");
-    if (!body && !head) return "";  // everything your agent does is on your list
-    return head + body + `<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
+    // its open tasks that are on your list show on their rows; say so, so the card shows it's on
+    const onList = f.tasks.filter((t) => listed.has("aag-" + t.id) && col(t) !== "done");
+    const counts = AAG.filter(([c]) => c !== "done").map(([c, title]) => [onList.filter((t) => col(t) === c).length, title.toLowerCase()])
+      .filter(([n]) => n).map(([n, title]) => `${n} ${title}`).join(", ");
+    const status = f.daemon === "running" ? `<p class="meta"><span class="st go">On</span>${onList.length ? `: ${onList.length} task${onList.length > 1 ? "s" : ""} on your rows (${counts})` : ""}${body ? "; the rest:" : "."}</p>` : "";
+    return head + status + body +`<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
   }
   // Two views of one list. Work: your real work in your order, one row per piece of work, with whoever is on
   // it: a Linear issue or review, deep work that isn't on Linear yet, and everything your agent does (its
