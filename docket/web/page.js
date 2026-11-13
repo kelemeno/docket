@@ -155,6 +155,14 @@ window.docketPage = function (el, opts = {}) {
       + (body || `<p class="empty">${p.loading ? "Reading your PRs…" : prTab === "reviewing" ? "Nothing to review from the last two weeks." : "No open PRs in the last two weeks."}</p>`)
       + `<p class="meta" style="margin:8px 0 0">${older ? `+ ${older} older · ` : ""}<a href="https://github.com/pulls${prTab === "reviewing" ? "/review-requested" : ""}" target="_blank" rel="noopener">All on GitHub ↗</a></p>`;
   }
+  // a card on the side; its title folds it to just the title and opens it again, remembered in this browser
+  const closedCards = () => { try { return JSON.parse(localStorage.getItem("docket-closed") || "[]"); } catch { return []; } };
+  function toggleClosed(key) {
+    const l = closedCards(), closed = !l.includes(key);
+    try { localStorage.setItem("docket-closed", JSON.stringify(closed ? [...l, key] : l.filter((k) => k !== key))); } catch {}
+    return closed;
+  }
+  const card = (key, title, html) => html ? `<section class="card${closedCards().includes(key) ? " closed" : ""}"><h2 class="fold" data-fold="${key}" title="Fold or open">${title}</h2>${html}</section>` : "";
   // Your agent (aag), when settings.json has "aag": its tasks by who has the move, what each agent does
   // now, the PR's state, and the links. Read every minute; when that fails, the last read stays.
   const AAG = [["needs_you", "Needs you", "bad"], ["working", "Working", "go"], ["waiting", "Waiting on others", "wait"], ["done", "Done today", ""]];
@@ -302,8 +310,11 @@ window.docketPage = function (el, opts = {}) {
       act: (t, action, value) => both(v, act(t, action, value)),
       reply: (t, text) => both(v, post("/reply", { id: t.id, text })),
       refresh: () => opts.run && opts.run.click(),
-      side: (d) => `<section class="card"><h2>Today</h2>${meetings(d)}</section>${d.aag ? (x => x ? `<section class="card"><h2>Your agent</h2>${x}</section>` : "")(agent(d)) : ""}<section class="card"><h2>Pull requests</h2>${prs(d)}</section>${(x => x ? `<section class="card"><h2>Sessions not on your list</h2>${x}</section>` : "")(sessions(d))}`,
+      side: (d) => card("today", "Today", meetings(d)) + (d.aag ? card("agent", "Your agent", agent(d)) : "") + card("prs", "Pull requests", prs(d))
+        + card("sessions", "Sessions not on your list", sessions(d)),
       async sideClick(e, d) {
+        const fold = e.target.closest("[data-fold]");
+        if (fold) { e.preventDefault(); return void fold.parentElement.classList.toggle("closed", toggleClosed(fold.dataset.fold)); }
         const mk = e.target.closest("[data-session-task]");
         if (mk) return both(v, post("/task", { action: "add", value: mk.dataset.sessionTask, kind: "deep", sessions: [mk.dataset.sessionTask] }));
         if (e.target.closest("[data-order-reset]")) {

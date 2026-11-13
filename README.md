@@ -61,6 +61,8 @@ no account, and nothing to install beyond Python. The task list is a JSON file i
     you (conflicts, CI failing, changes requested), waiting, and drafts. **Reviewing** groups the PRs
     you're asked to review or have reviewed: review requested, new commits since your review, waiting
     on the author, approved.
+  - Click a card's title to fold it to just the title, and again to open it; Docket remembers which
+    are folded.
   - **Your agent**, always: whether it's on, off, paused or offline, what to sign, and every task it
     has open (and done today) by who has the move, with what it's doing, its PR and links; a task
     that's also a row says **on your list**.

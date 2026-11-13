@@ -42,6 +42,11 @@ kbd { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: inherit;
 .card h2, .card > summary { font-size: 13px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
   color: var(--text-2); margin: 0 0 10px; }
 details.card > summary { cursor: pointer; margin: 0; }
+.card h2.fold { cursor: pointer; user-select: none; display: flex; justify-content: space-between; }
+.card h2.fold::after { content: "▾"; color: var(--muted); font-weight: 400; }
+.card.closed h2.fold { margin: 0; }
+.card.closed h2.fold::after { content: "▸"; }
+.card.closed > :not(h2) { display: none; }
 details.card[open] > summary { margin-bottom: 10px; }
 .count { color: var(--muted); font-weight: 400; margin-left: 4px; }
 
