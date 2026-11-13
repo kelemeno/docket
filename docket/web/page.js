@@ -284,7 +284,15 @@ window.docketPage = function (el, opts = {}) {
     <div data-view-el="triage"></div><div data-view-el="work"></div>`;
   const box = (v) => el.querySelector(`[data-view-el="${v}"]`);
   let loading = null;  // the two views load the same state: one fetch for both
-  const load = () => loading || (loading = fetch("/state").then((r) => r.json()).finally(() => setTimeout(() => { loading = null; }, 300)));
+  const load = () => loading || (loading = fetch("/state").then((r) => r.json()).then((d) => { fresh(d.code); return d; }).finally(() => setTimeout(() => { loading = null; }, 300)));
+  // Docket's page code: when an update changes it, the page reloads itself, unless you're typing or dragging
+  let code = null;
+  function fresh(c) {
+    if (!c || code === c) return;
+    if (code === null) { code = c; return; }
+    const typing = [...el.querySelectorAll("input, textarea")].some((x) => x.value && x.type !== "checkbox" && x.type !== "radio");
+    if (!typing && !document.body.classList.contains("dragging-row")) location.reload();
+  }
   const views = {};
   const both = async (v, p) => { const out = await p; for (const k in views) if (k !== v) views[k].reload(); return out; };
   function base(v) {

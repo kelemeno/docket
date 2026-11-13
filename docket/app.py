@@ -462,6 +462,8 @@ def serve(port=PORT, index=None, routes=None):
              **{f"/{name}": (WEB / name, kind) for name, kind in (("docket.js", "text/javascript"), ("page.js", "text/javascript"),
                                                                 ("esc.js", "text/javascript"), ("docket.css", "text/css"))}}
     routes = routes or {}
+    # which page code is on disk: when an update changes it, an open page reloads itself (page.js)
+    code = lambda: str(max(path.stat().st_mtime_ns for path, _ in files.values()))
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -482,7 +484,7 @@ def serve(port=PORT, index=None, routes=None):
             if self.command == "GET" and url.path in routes:
                 return self._send(200, json.dumps(routes[url.path]()).encode())
             if self.command == "GET" and url.path == "/state":
-                return self._send(200, json.dumps(page.state()).encode())
+                return self._send(200, json.dumps({**page.state(), "code": code()}).encode())
             if self.command == "POST" and url.path in ("/refresh", "/task", "/reply"):
                 if self.headers.get("X-Docket") != "1":
                     return self._send(403, b'{"error": "missing header"}')
