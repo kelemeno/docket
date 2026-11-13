@@ -272,7 +272,8 @@ window.docketPage = function (el, opts = {}) {
     const issue = i ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.key)}</a> <span class="lstate">${esc(i.state)}</span>${i.who ? ` · ${esc(i.who)}'s` : ""}` : "";
     if (i && !i.over)
       return issue + ` · <button class="linkish" ${row ? "data-row-act" : "data-act"}="linear_review" title="Comments “In review by @you” on ${esc(i.key)}, so it's your review">mark your review</button>`;
-    const make = `<a href="${esc(create)}" target="_blank" rel="noopener">create${by ? ` for ${esc(by.name)}` : th && th.pr ? ` (${esc(th.pr.author)} isn't on Linear: unassigned)` : ""} ↗</a>`;
+    const lost = !by && th && th.pr;  // the PR's author isn't on Linear
+    const make = `<a href="${esc(create)}" target="_blank" rel="noopener"${lost ? ` title="${esc(th.pr.author)} isn't on Linear, so it's unassigned"` : ""}>create${by ? ` for ${esc(by.name)}` : lost ? ", unassigned" : ""} ↗</a>`;
     return (issue ? issue + " · " : "") + `<span style="color:var(--warn)">not on Linear</span> ` + make;
   }
   function moreWork(t, d, where) {
