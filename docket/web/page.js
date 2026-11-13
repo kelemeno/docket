@@ -230,11 +230,18 @@ window.docketPage = function (el, opts = {}) {
   const dur = (m) => m < 60 ? m + "m" : m % 60 ? (m / 60).toFixed(1) + "h" : m / 60 + "h";
   const EST = [15, 30, 60, 120, 240];
   // A new Linear issue for a task, filled in (Linear's linear.new parameters): your team, you as the assignee, its
-  // priority, the next step and why as the description, and its links attached as links. Docket writes nothing to Linear.
+  // priority, the next step and why as the description, and its links attached as links. For a PR you review,
+  // it's the author's: their PR's title, assigned to them in their team (Linear found them, linear.py author()).
   const LINEAR_PRIORITY = { P0: "Urgent", P1: "High", P2: "Medium" };
+  const theirs = (d, t) => ((d.linear || {}).theirs || {})[t.id];
+  // An author Linear doesn't know: unassigned, for someone to take; Docket then finds it by its PR.
   function newIssue(d, t) {
-    const q = new URLSearchParams({ title: t.title, description: [t.next, t.why].filter(Boolean).join("\n\n"), assignee: "me" });
-    if (d.linear && d.linear.team) q.set("team", d.linear.team);
+    const th = theirs(d, t), pr = th && th.pr, by = th && th.author;
+    const q = new URLSearchParams(pr ? { title: pr.title, description: [pr.url, by ? "" : `Author: ${pr.author} on GitHub`, t.why].filter(Boolean).join("\n\n") }
+                                     : { title: t.title, description: [t.next, t.why].filter(Boolean).join("\n\n"), assignee: "me" });
+    if (by) q.set("assignee", by.id);
+    if (by && by.team) q.set("team", by.team);
+    else if (d.linear && d.linear.team) q.set("team", d.linear.team);
     if (LINEAR_PRIORITY[t.priority]) q.set("priority", LINEAR_PRIORITY[t.priority]);
     const links = (t.sources || []).filter((s) => s.link).map((s) => `${s.link}|${String(s.label).replace(/[,|]/g, " ")}`);
     if (links.length) q.set("links", links.join(","));
@@ -258,15 +265,24 @@ window.docketPage = function (el, opts = {}) {
     return (d.tasks || []).filter((x) => x.aag && x.id !== t.id && x.status !== "done" && x.status !== "dropped"
       && ((key && x.issue === key) || [...prsOf(x)].some((p) => mine.has(p))));
   }
+  // a task on nothing of yours on Linear: the issue already there (someone else's), to mark as your review,
+  // or the link to create one (for the PR's author, when it's a PR you review)
+  function notOnLinear(d, t, row) {
+    const th = theirs(d, t), i = th && th.issue, create = newIssue(d, t), by = th && th.author;
+    const issue = i ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.key)}</a> <span class="lstate">${esc(i.state)}</span>${i.who ? ` · ${esc(i.who)}'s` : ""}` : "";
+    if (i && !i.over)
+      return issue + ` · <button class="linkish" ${row ? "data-row-act" : "data-act"}="linear_review" title="Comments “In review by @you” on ${esc(i.key)}, so it's your review">mark your review</button>`;
+    const make = `<a href="${esc(create)}" target="_blank" rel="noopener">create${by ? ` for ${esc(by.name)}` : th && th.pr ? ` (${esc(th.pr.author)} isn't on Linear: unassigned)` : ""} ↗</a>`;
+    return (issue ? issue + " · " : "") + `<span style="color:var(--warn)">not on Linear</span> ` + make;
+  }
   function moreWork(t, d, where) {
     const i = t.linear;
     const helpers = agentsOn(d, t);
-    const create = newIssue(d, t);
     if (where === "row") {
       // the issue as Linear has it: its key and status (In Progress, In Review…), and whether it's your review
       const on = i || (t.issue && (issueOf(d, t) || {}).linear);
       const issue = on ? `${esc(on.key || t.issue)} <span class="lstate">${esc(on.state || "")}</span>${on.role === "reviewer" ? " · your review" : ""}` : t.issue && esc(t.issue);
-      return [issue || `<span style="color:var(--warn)">not on Linear</span> <a href="${esc(create)}" target="_blank" rel="noopener">create ↗</a>`, prLinks(d, t),
+      return [issue || notOnLinear(d, t, true), prLinks(d, t),
               ...whoIsOn(d, t), ...helpers.map((x) => `agent: ${esc(x.next)}`),
               `<span class="${t.est ? "" : "meta"}">${dur(est(t))}</span>`].filter(Boolean).join(" · ");
     }
@@ -277,7 +293,7 @@ window.docketPage = function (el, opts = {}) {
       .map((s) => `<a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.label)} ↗</a>`)].join(" · ")}</p>`).join("");
     if (i) return `<div class="chips"><span class="chip">${esc(i.key)}</span><span class="chip">${ROLE[i.role] || ""}</span><span class="chip">${esc(i.state)}</span></div>` + agentLines + pick;
     if (t.issue) return agentLines + pick;
-    return agentLines + pick + `<p class="meta" style="color:var(--warn)">Not on Linear · <a href="${esc(create)}" target="_blank" rel="noopener">create it ↗</a> · or name its key in a note</p>`;
+    return agentLines + pick + `<p class="meta">${notOnLinear(d, t, false)} · or name its key in a note</p>`;
   }
   function linearLine(d) {
     const l = d.linear;
@@ -343,6 +359,7 @@ window.docketPage = function (el, opts = {}) {
       order.splice(before < 0 ? order.length : before, 0, t.id);
       return post("/task", { id: t.id, action: "order", value: order });
     }
+    if (action === "linear_review") return post("/linear/review", { id: t.id });
     if (action !== "restore") return post("/task", { id: t.id, action, value });
     // undo: back to the view, or the status and day, it had before
     const today = views.triage.data.today, cur = (views.triage.data.tasks || []).find((x) => x.id === t.id);

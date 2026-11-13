@@ -284,6 +284,7 @@
       const t = data.tasks.find((x) => x.id === r.dataset.id); if (!t) return;
       const b = e.target.closest("button");
       if (b && b.dataset.row === "done") return act(t, "done", null, "Done");
+      if (b && b.dataset.rowAct) return act(t, b.dataset.rowAct, b.dataset.value || null, null, true);
       if (b && b.dataset.row === "snooze1") return act(t, "snooze", snoozeDay(1), "Snoozed");
       if (b && /^m\d+$/.test(b.dataset.row || "")) return act(t, "snooze", snoozeDay(b.dataset.row), remindLabel(b.dataset.row));
       if (b && b.dataset.row === "restore") return act(t, "restore", { ...t, status: "open", done_at: null }, "Back on the list");

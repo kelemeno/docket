@@ -171,9 +171,19 @@ The rest of the list is coupled to its issue: a task that names the key (`EVM-12
 or to one of its PRs (attached to the issue, or linked in its description), or has the issue's title (one
 made with **create ↗**). In your Work order the issue takes the task's place. A task the refresh made about it (a Slack thread about the PR, say) is folded
 into the issue's task, with its why and links. Your agent's task for one of its PRs shows on the
-issue's card and decides its move. Deep work that belongs to no issue shows under **Not on Linear**,
-with a link that opens a new Linear issue filled in from the task: your team, you as the assignee, its
-priority, the next step as the description and its links attached. Docket itself never writes to Linear.
+issue's card and decides its move.
+
+A task on nothing of yours may still be about someone else's issue: one it names, or the one Linear has
+its PR attached to (looked up with each read). Its row shows that issue, whose it is and its status, with
+**mark your review**: Docket comments "In review by @you" on the issue, which makes it your review, and
+reads Linear again, so the issue takes the task in. That comment is the one thing Docket writes to Linear,
+and only when you click it.
+
+With no open issue, the row says **not on Linear** with a **create ↗** link that opens a new Linear issue,
+filled in. For a PR you review it's the author's: the PR's title, assigned to them in their team (found
+by the GitHub account Linear has for them, else by name), or unassigned when they aren't on Linear. For
+the rest it's yours: your team, you as the assignee, its priority, the next step as the description.
+Its links are attached, so Docket finds it again.
 
 ## Safety
 
@@ -191,7 +201,7 @@ priority, the next step as the description and its links attached. Docket itself
   rebinding). It sends no CORS headers, and changes need a header a web form can't set.
 - **Your data stays local.** The task list is in a 0700 folder, 0600 file, and so is your Linear key.
   Nothing leaves your computer except what Claude Code sends to Anthropic, the calls to the services
-  it uses, what your notes ask it to send, and Docket's read-only queries to Linear's API with your key.
+  it uses, what your notes ask it to send, and Docket's queries to Linear's API with your key: reads, and the one comment **mark your review** posts when you click it.
 
 ## Using the page on another task list
 

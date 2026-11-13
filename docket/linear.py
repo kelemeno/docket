@@ -60,7 +60,7 @@ QUERY = ("query($since:DateTimeOrDuration!){viewer{id name displayName email tea
          "comments(first:150,orderBy:updatedAt,filter:{body:{containsIgnoreCase:\"review\"},updatedAt:{gt:$since}})"
          "{nodes{id body url createdAt user{name displayName} issue{" + ISSUE + "}}}}")
 
-_feed = {"items": None, "me": None, "at": None, "error": None, "since": None, "read": 0, "team": None}
+_feed = {"items": None, "me": None, "at": None, "error": None, "since": None, "read": 0, "team": None, "theirs": {}}
 _lock = threading.Lock()
 _rules = ""  # what rules() said at the last look, for app.RULES_FROM
 
@@ -69,18 +69,27 @@ def key():
     return store.settings().get("linear_key") or os.environ.get("LINEAR_API_KEY") or ""
 
 
-def read(api_key, days=30):
-    """Linear's answer to QUERY: {viewer, comments}. Raises when it can't be had."""
-    body = json.dumps({"query": QUERY, "variables": {"since": f"-P{int(days)}D"}}).encode()
+def _post(api_key, query, variables=None, partial=False):
+    """Linear's data for a query or mutation. Raises when it can't be had; with `partial`, data some of
+    whose parts failed (an issue key that isn't one) is still had."""
+    body = json.dumps({"query": query, "variables": variables or {}}).encode()
     req = urllib.request.Request(API, data=body, headers={"Authorization": api_key, "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
             out = json.loads(r.read())
     except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Linear said {e.code}: {e.read().decode(errors='replace')[:200]}") from None
-    if out.get("errors"):
+        if partial and e.code == 400:
+            out = json.loads(e.read() or b"{}")
+        else:
+            raise RuntimeError(f"Linear said {e.code}: {e.read().decode(errors='replace')[:200]}") from None
+    if out.get("errors") and not (partial and out.get("data")):
         raise RuntimeError("Linear: " + "; ".join(str(x.get("message")) for x in out["errors"])[:200])
-    return out["data"]
+    return out.get("data") or {}
+
+
+def read(api_key, days=30):
+    """Linear's answer to QUERY: {viewer, comments}. Raises when it can't be had."""
+    return _post(api_key, QUERY, {"since": f"-P{int(days)}D"})
 
 
 def _names(me):
@@ -292,6 +301,99 @@ def sync(reg, feed, prs, today, now):
     return json.dumps(reg, sort_keys=True) != before
 
 
+# Someone else's issue. A task on nothing of yours on Linear (a review of Nino's PR) may be about an
+# issue that's already there: one it names, or the one Linear has its PR attached to. Marking your
+# review comments "In review by @you" on it, which makes it your review (reviews()). With none, a new
+# issue for a PR you review is the author's: assigned to them, in their team.
+OTHERS = "id identifier title url state{name type} assignee{id name displayName} team{key}"
+USERS = "users(first:250,filter:{active:{eq:true}}){nodes{id name displayName email gitHubUserId teams(first:10){nodes{key archivedAt}}}}"
+
+
+def wanted(reg):
+    """{task id: (issue keys, PR links)} for open tasks on nothing on Linear (not your agent's)."""
+    out = {}
+    for t in reg["tasks"]:
+        if t.get("linear") or t.get("issue") or t.get("aag") or t["status"] not in tasks.OPEN:
+            continue
+        ks, ps = sorted(keys(t))[:3], sorted(_pr_links(t))[:3]
+        if ks or ps:
+            out[t["id"]] = (ks, ps)
+    return out
+
+
+def _issue(i):
+    a = i.get("assignee") or {}
+    return {"id": i["id"], "key": i["identifier"], "title": tasks._text(i.get("title"), 160), "url": i.get("url") or "",
+            "state": (i.get("state") or {}).get("name") or "", "over": (i.get("state") or {}).get("type") in OVER,
+            "who": a.get("displayName") or a.get("name") or "", "team": (i.get("team") or {}).get("key")}
+
+
+def author(pr, users):
+    """The Linear user who wrote a PR: by the GitHub account Linear has for them, else by name, else by
+    a display name or email that is their GitHub login. {id, name, team} or None."""
+    gid, login, name = str(pr.get("author_id") or ""), str(pr.get("author") or "").casefold(), str(pr.get("author_name") or "").casefold()
+    bare = lambda x: re.sub(r"[^a-z0-9]", "", str(x or "").casefold())
+    nick = re.sub(r"^0x", "", bare(login))
+    tests = (lambda u: gid and str(u.get("gitHubUserId") or "") in (gid, login),
+             lambda u: name and str(u.get("name") or "").casefold() == name,
+             lambda u: login and login in (str(u.get("displayName") or "").casefold(), str(u.get("email") or "").split("@")[0].casefold()),
+             lambda u: nick and bare(u.get("name")) == nick,  # ninolipartiia: Nino Lipartiia
+             lambda u: nick and bare(str(u.get("name") or "").split(" ")[0]) == nick)  # 0xValera: Valera, if only one
+    for n, test in enumerate(tests):
+        found = [u for u in users if test(u)]
+        u = found[0] if found and (n < 4 or len(found) == 1) else None
+        if u:
+            team = next((t["key"] for t in (u.get("teams") or {}).get("nodes") or [] if not t.get("archivedAt")), None)
+            return {"id": u["id"], "name": u.get("name") or u.get("displayName") or "", "team": team}
+    return None
+
+
+def lookup(api_key, want, reviewing):
+    """For the tasks in `want`: {task id: {issue, pr, author}}, the issue already on Linear (an open one
+    first), and for a PR you review ({url: PR} as gh read it), the PR and its author on Linear."""
+    ks = sorted({k for k_, _ in want.values() for k in k_})[:40]
+    ps = sorted({u for _, p in want.values() for u in p})[:40]
+    # by team and number: a key that's no issue finds nothing (issue(id:) would fail the whole query)
+    parts = [f"k{n}: issues(first:1,filter:{{team:{{key:{{eq:{json.dumps(k.split('-')[0])}}}}},number:{{eq:{int(k.split('-')[1])}}}}})"
+             f"{{nodes{{{OTHERS}}}}}" for n, k in enumerate(ks)]
+    parts += [f"p{n}: attachmentsForURL(url:{json.dumps(u)}){{nodes{{issue{{{OTHERS}}}}}}}" for n, u in enumerate(ps)]
+    if any(u in reviewing for u in ps):
+        parts.append(USERS)
+    if not parts:
+        return {}
+    data = _post(api_key, "{" + " ".join(parts) + "}", partial=True)
+    by_key = {k: next(iter((data.get(f"k{n}") or {}).get("nodes") or []), None) for n, k in enumerate(ks)}
+    by_pr = {u: [x["issue"] for x in (data.get(f"p{n}") or {}).get("nodes") or [] if x.get("issue")] for n, u in enumerate(ps)}
+    users = (data.get("users") or {}).get("nodes") or []
+    out = {}
+    for tid, (k_, p_) in want.items():
+        found = [_issue(i) for i in [by_key.get(k) for k in k_] + [i for u in p_ for i in by_pr.get(u, [])] if i]
+        issue = next((i for i in found if not i["over"]), None) or (found[0] if found else None)
+        pr = next((reviewing[u] for u in p_ if u in reviewing), None)
+        if issue or pr:
+            out[tid] = {"issue": issue, "pr": pr and {"url": pr["url"], "title": pr["title"], "author": pr["author"]},
+                        "author": pr and author(pr, users)}
+    return out
+
+
+def mark_review(body):
+    """POST /linear/review {id}: comments "In review by @you" on the open issue found for the task, then
+    reads Linear again, so the issue comes back as your review and takes the task in."""
+    with _lock:
+        x, me = (_feed["theirs"] or {}).get(str(body.get("id"))), _feed["me"] or {}
+    i = x and x.get("issue")
+    if not i or i["over"]:
+        raise ValueError("There's no open Linear issue for this task.")
+    name = me.get("displayName") or me.get("name")
+    if not name:
+        raise ValueError("Linear hasn't been read yet.")
+    out = _post(key(), "mutation($i:String!,$b:String!){commentCreate(input:{issueId:$i,body:$b}){success}}",
+                {"i": i["id"], "b": f"In review by @{name}"})
+    if not (out.get("commentCreate") or {}).get("success"):
+        raise RuntimeError(f"Linear didn't take the comment on {i['key']}.")
+    poll(read_linear=True)
+
+
 def _pr_states():
     """{PR url: {state}} for your PRs and the ones you review, as the page last read them with gh."""
     p = app.prs()
@@ -342,7 +444,17 @@ def poll(read_linear=True):
                 error = str(e)[-200:]
             else:
                 with _lock:
-                    _feed["team"] = team(data)
+                    _feed["team"], _feed["me"] = team(data), data.get("viewer")
+                try:
+                    with tasks.LOCK:
+                        want = wanted(tasks.load())
+                    reviewing = {p["url"]: p for p in app.prs().get("reviewing") or []}
+                    theirs = lookup(api_key, want, reviewing)
+                except Exception as e:  # the list still reads; the next read looks again
+                    print(f"linear: lookup: {e!r}", file=sys.stderr)
+                else:
+                    with _lock:
+                        _feed["theirs"] = theirs
         with _lock:
             _feed["read"] = time.time()
             if got is not None:
@@ -372,7 +484,8 @@ def state():
     with _lock:
         f = dict(_feed)
     return {"linear": {"key": bool(key()), "at": f["at"], "error": f["error"], "since": f["since"],
-                       "count": len(f["items"] or []), "team": store.settings().get("linear_team") or f["team"]}}
+                       "count": len(f["items"] or []), "team": store.settings().get("linear_team") or f["team"],
+                       "theirs": f["theirs"] or {}}}
 
 
 def start(wait=10):
@@ -382,6 +495,7 @@ def start(wait=10):
     app.STATE = lambda: {**shown(), **state()}
     tasks.extra = lambda item, current: {**kept(item, current), **extra(item, current)}
     app.RULES_FROM.append(lambda: _rules)
+    app.POSTS["/linear/review"] = mark_review
     app.AFTER_REFRESH.append(lambda _reg: poll(read_linear=False))  # fold what the refresh added
     first = threading.Event()
 

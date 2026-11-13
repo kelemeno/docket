@@ -194,7 +194,7 @@ class Reading(unittest.TestCase):
     def test_poll_without_a_key_reads_nothing_and_says_so(self):
         with mock.patch.object(linear, "key", return_value=""), mock.patch.object(tasks, "load", return_value={"tasks": []}):
             linear.poll()
-        self.assertEqual(linear.state()["linear"], {"key": False, "at": None, "error": None, "since": None, "count": 0, "team": None})
+        self.assertEqual(linear.state()["linear"], {"key": False, "at": None, "error": None, "since": None, "count": 0, "team": None, "theirs": {}})
 
     def test_your_team_is_the_settings_one_else_your_first_live_one_on_linear(self):
         d = data()
@@ -218,3 +218,64 @@ class Reading(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Theirs(unittest.TestCase):
+    """A task on nothing of yours on Linear: the issue that's already there, or the PR author's."""
+    USERS = [{"id": "u-nino", "name": "Nino Loria", "displayName": "nino", "email": "nino@x.io", "gitHubUserId": None,
+              "teams": {"nodes": [{"key": "OLD", "archivedAt": "2025"}, {"key": "EVM", "archivedAt": None}]}},
+             {"id": "u-vg", "name": "Valera G", "displayName": "vg", "email": "v@x.io", "gitHubUserId": "777", "teams": {"nodes": []}}]
+
+    def test_wanted_is_open_tasks_on_nothing_with_a_key_or_a_pr(self):
+        reg = {"tasks": [
+            {"id": "a", "title": "Review Nino's PR", "status": "open", "sources": [{"label": "pr", "link": PR1}]},
+            {"id": "b", "title": "EVM-9 follow-up", "status": "open", "sources": []},
+            {"id": "c", "title": "on it", "status": "open", "issue": "EVM-1", "sources": [{"label": "pr", "link": PR2}]},
+            {"id": "d", "title": "agent", "status": "open", "aag": {"id": "x"}, "sources": [{"label": "pr", "link": PR2}]},
+            {"id": "e", "title": "done", "status": "done", "sources": [{"label": "pr", "link": PR2}]},
+            {"id": "f", "title": "nothing", "status": "open", "sources": []}]}
+        self.assertEqual(linear.wanted(reg), {"a": ([], [PR1]), "b": (["EVM-9"], [])})
+
+    def test_the_author_is_found_by_github_account_then_name_then_login(self):
+        self.assertEqual(linear.author({"author": "vgh", "author_id": 777}, self.USERS)["id"], "u-vg")
+        self.assertEqual(linear.author({"author": "nl", "author_name": "Nino Loria"}, self.USERS),
+                         {"id": "u-nino", "name": "Nino Loria", "team": "EVM"})
+        self.assertEqual(linear.author({"author": "NINO"}, self.USERS)["id"], "u-nino")
+        self.assertIsNone(linear.author({"author": "someone", "author_name": "Some One"}, self.USERS))
+        # no name on GitHub: the login against the name, or a first name only one person has
+        self.assertEqual(linear.author({"author": "nino-loria"}, self.USERS)["id"], "u-nino")
+        self.assertEqual(linear.author({"author": "0xValera"}, self.USERS)["id"], "u-vg")
+        two = self.USERS + [{"id": "u-v2", "name": "Valera Other", "teams": {"nodes": []}}]
+        self.assertIsNone(linear.author({"author": "0xValera"}, two))
+
+    def test_lookup_finds_an_open_issue_first_and_a_reviewed_prs_author(self):
+        done = {"id": "i1", "identifier": "EVM-1", "title": "Old", "url": "u1", "state": {"name": "Done", "type": "completed"},
+                "assignee": {"name": "Valera G", "displayName": "vg"}, "team": {"key": "EVM"}}
+        live = {**done, "id": "i2", "identifier": "EVM-2", "state": {"name": "In Progress", "type": "started"}}
+        sent = {}
+
+        def post(api_key, query, variables=None, partial=False):
+            sent["q"] = query
+            return {"k0": {"nodes": []}, "p0": {"nodes": [{"issue": done}, {"issue": live}]}, "p1": {"nodes": []}, "users": {"nodes": self.USERS}}
+        want = {"a": (["NOPE-1"], [PR1]), "b": ([], [PR2])}
+        reviewing = {PR2: {"url": PR2, "title": "feat: x", "author": "nl", "author_name": "Nino Loria"}}
+        with mock.patch.object(linear, "_post", post):
+            out = linear.lookup("k", want, reviewing)
+        self.assertIn("users(", sent["q"])
+        self.assertEqual((out["a"]["issue"]["key"], out["a"]["issue"]["who"], out["a"]["author"]), ("EVM-2", "vg", None))
+        self.assertEqual((out["b"]["issue"], out["b"]["author"]["id"], out["b"]["pr"]["title"]), (None, "u-nino", "feat: x"))
+
+    def test_marking_your_review_comments_on_the_open_issue_and_reads_again(self):
+        calls = []
+        with mock.patch.dict(linear._feed, theirs={"a": {"issue": {"id": "i2", "key": "EVM-2", "over": False}},
+                                                   "b": {"issue": {"id": "i1", "key": "EVM-1", "over": True}}}, me=ME), \
+                mock.patch.object(linear, "key", return_value="k"), mock.patch.object(linear, "poll") as poll, \
+                mock.patch.object(linear, "_post", lambda k, q, v=None, partial=False: calls.append(v) or {"commentCreate": {"success": True}}):
+            linear.mark_review({"id": "a"})
+            self.assertEqual(calls, [{"i": "i2", "b": "In review by @kl"}])
+            poll.assert_called_once_with(read_linear=True)
+            with self.assertRaises(ValueError):
+                linear.mark_review({"id": "b"})
+        # and the comment makes it your review
+        i = issue("EVM-2")
+        self.assertEqual([x["role"] for x in linear.items(data(comments=[comment("In review by @kl", i, by="Kalman Lajko")]))], ["reviewer"])

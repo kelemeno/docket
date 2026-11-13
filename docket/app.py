@@ -137,6 +137,7 @@ RULES = ""
 RULES_FROM = []
 AFTER_REFRESH = []
 STATE = dict  # more for the page's state: a function returning a dict
+POSTS = {}  # more POST routes: {"/path": function(body)}; the page gets the state back
 
 
 def _env():
@@ -265,7 +266,7 @@ def refresh():
 # Your own open PRs, the ones you're asked to review (you yourself, not your teams: those are mostly
 # bots), and the ones you've reviewed that are still open. A query each: all three in one times out.
 PRS = ("query($q:String!){viewer{login} search(query:$q,type:ISSUE,first:30){nodes{... on PullRequest{number title "
-       "url isDraft updatedAt reviewDecision mergeable author{login} repository{nameWithOwner} "
+       "url isDraft updatedAt reviewDecision mergeable author{login ... on User{name databaseId}} repository{nameWithOwner} "
        "reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}} "
        "latestReviews(first:20){nodes{author{login} state submittedAt}} "
        "commits(last:1){nodes{commit{committedDate statusCheckRollup{state}}}}}}}}")
@@ -321,7 +322,8 @@ def _review_state(n, me):
 def _pr(n, state):
     return {"repo": n["repository"]["nameWithOwner"], "number": n["number"], "title": n["title"][:160],
             "url": n["url"] if n["url"].startswith("https://") else "", "updated": n["updatedAt"][:19],
-            "author": ((n.get("author") or {}).get("login") or "")[:60], "draft": bool(n.get("isDraft")), "state": state}
+            "author": ((n.get("author") or {}).get("login") or "")[:60], "author_name": ((n.get("author") or {}).get("name") or "")[:80],
+            "author_id": (n.get("author") or {}).get("databaseId"), "draft": bool(n.get("isDraft")), "state": state}
 
 
 def prs():
@@ -501,6 +503,14 @@ def serve(port=PORT, index=None, routes=None):
                         tasks.act(str(body.get("id")), body.get("action"), body.get("value"), store.today(), store.now())
                 except (KeyError, ValueError, AttributeError) as e:
                     return self._send(400, json.dumps({"error": str(e)}).encode())
+                return self._send(200, json.dumps(page.state()).encode())
+            if self.command == "POST" and url.path in POSTS:
+                if self.headers.get("X-Docket") != "1":
+                    return self._send(403, b'{"error": "missing header"}')
+                try:
+                    POSTS[url.path](json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}"))
+                except Exception as e:  # Linear said no, say: the page shows why
+                    return self._send(400, json.dumps({"error": str(e)[:300]}).encode())
                 return self._send(200, json.dumps(page.state()).encode())
             return self._send(404, b'{"error": "no such route"}')
 

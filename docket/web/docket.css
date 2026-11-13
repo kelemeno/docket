@@ -185,3 +185,4 @@ body.dragging-row ::selection { background: transparent; }
 .placemenu .ends button { padding: 3px 10px; font-size: 13px; }
 .lstate { border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; font-size: 11px; color: var(--text-2); }
 .ses .mk { margin-top: 4px; padding: 1px 8px; font-size: 12px; }
+button.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--accent, inherit); text-decoration: underline; cursor: pointer; }
