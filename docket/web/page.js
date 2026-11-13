@@ -169,8 +169,9 @@ window.docketPage = function (el, opts = {}) {
     if (!f) return head || `<p class="empty">Reading your agent…</p>`;
     // as on the list (aag.py finished): a review the agents agree on is done for you, and done shows for the day
     const col = (t) => t.column === "done" || (t.role === "reviewer" && t.status === "agents_done" && t.column !== "needs_you") ? "done" : t.column;
-    const listed = new Set((data.tasks || []).map((x) => x.id));  // on your list: shown on its row instead
-    const shown = f.tasks.filter((t) => !listed.has("aag-" + t.id) && (col(t) !== "done" || new Date(t.statusAt || t.updatedAt).toLocaleDateString("sv") === data.today));
+    // every task it has open (and done today), whether or not it's on your list: the card is where you see your agent
+    const listed = new Set((data.tasks || []).map((x) => x.id));
+    const shown = f.tasks.filter((t) => col(t) !== "done" || new Date(t.statusAt || t.updatedAt).toLocaleDateString("sv") === data.today);
     const ln = (href, text) => href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${text}</a>` : "";
     const row = (t, tone) => {
       const p = t.pr;
@@ -179,19 +180,16 @@ window.docketPage = function (el, opts = {}) {
       // a working agent's next move is what it does now (t.now), with how long its run has gone on
       const since = t.now && Math.round((Date.now() - Date.parse(t.now.since)) / 60e3);
       const sub = [`<span class="st ${tone}">${esc(t.next)}</span>`, t.now && `run ${since < 60 ? since + " min" : Math.round(since / 60) + " h"}`, facts,
-                   ln(t.dm, "DM"), ln(t.thread, "thread"), t.embargo && "embargo", t.cost >= 1 && "$" + Math.round(t.cost)].filter(Boolean).join(" · ");
+                   ln(t.dm, "DM"), ln(t.thread, "thread"), t.embargo && "embargo", t.cost >= 1 && "$" + Math.round(t.cost),
+                   listed.has("aag-" + t.id) && "on your list"].filter(Boolean).join(" · ");
       return `<div class="pr">${ln(t.dm || (p && p.url) || t.thread, esc(t.title)) || esc(t.title)}<div class="s">${sub}</div></div>`;
     };
     const body = AAG.map(([column, title, tone]) => {
       const l = shown.filter((t) => col(t) === column);
       return l.length ? `<div class="sub">${title}</div>` + l.map((t) => row(t, tone)).join("") : "";
     }).join("");
-    // its open tasks that are on your list show on their rows; say so, so the card shows it's on
-    const onList = f.tasks.filter((t) => listed.has("aag-" + t.id) && col(t) !== "done");
-    const counts = AAG.filter(([c]) => c !== "done").map(([c, title]) => [onList.filter((t) => col(t) === c).length, title.toLowerCase()])
-      .filter(([n]) => n).map(([n, title]) => `${n} ${title}`).join(", ");
-    const status = f.daemon === "running" ? `<p class="meta"><span class="st go">On</span>${onList.length ? `: ${onList.length} task${onList.length > 1 ? "s" : ""} on your rows (${counts})` : ""}${body ? "; the rest:" : "."}</p>` : "";
-    return head + status + body +`<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
+    const status = f.daemon === "running" ? `<p class="meta"><span class="st go">On</span>${body ? "" : ": nothing open."}</p>` : "";
+    return head + status + body + `<p class="meta" style="margin:8px 0 0">${esc(f.host)}${a.at ? ` · read ${hhmm(a.at)}` : ""}</p>`;
   }
   // Two views of one list. Work: your real work in your order, one row per piece of work, with whoever is on
   // it: a Linear issue or review, deep work that isn't on Linear yet, and everything your agent does (its
