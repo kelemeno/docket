@@ -445,16 +445,6 @@ def poll(read_linear=True):
             else:
                 with _lock:
                     _feed["team"], _feed["me"] = team(data), data.get("viewer")
-                try:
-                    with tasks.LOCK:
-                        want = wanted(tasks.load())
-                    reviewing = {p["url"]: p for p in app.prs().get("reviewing") or []}
-                    theirs = lookup(api_key, want, reviewing)
-                except Exception as e:  # the list still reads; the next read looks again
-                    print(f"linear: lookup: {e!r}", file=sys.stderr)
-                else:
-                    with _lock:
-                        _feed["theirs"] = theirs
         with _lock:
             _feed["read"] = time.time()
             if got is not None:
@@ -463,6 +453,7 @@ def poll(read_linear=True):
                 _feed.update(error=error, since=_feed["since"] or store.now())
             else:  # no key
                 _feed.update(items=None, at=None, error=None, since=None)
+    _look(read_linear)
     with _lock:
         feed = _feed["items"]
     with tasks.LOCK:
@@ -470,6 +461,27 @@ def poll(read_linear=True):
         if feed is not None and sync(reg, feed, _pr_states(), store.today(), store.now()):
             tasks.save(reg)
     _rules = rules(reg) if feed is not None else ""
+
+
+def _look(read_linear):
+    """Looks up someone else's issues (lookup()) with each read of Linear, and in between when the tasks
+    on nothing or the PRs you review have changed (gh's list comes after the first read)."""
+    api_key = key()
+    if not api_key or not _feed["me"]:
+        return
+    with tasks.LOCK:
+        want = wanted(tasks.load())
+    reviewing = {p["url"]: p for p in app.prs().get("reviewing") or []}
+    seen = json.dumps([want, sorted((u, p.get("author"), p.get("author_name")) for u, p in reviewing.items())], sort_keys=True)
+    if not read_linear and seen == _feed.get("looked"):
+        return
+    try:
+        theirs = lookup(api_key, want, reviewing)
+    except Exception as e:  # the list still reads; the next minute looks again
+        print(f"linear: lookup: {e!r}", file=sys.stderr)
+        return
+    with _lock:
+        _feed.update(theirs=theirs, looked=seen)
 
 
 def team(data):
