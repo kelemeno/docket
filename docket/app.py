@@ -97,6 +97,10 @@ What counts:
 - A task is something {who} has to do: a promise they made, a question to them that's unanswered, a
   review requested from them, a decision they owe, a deadline. Not FYI. Not what others have to do,
   unless {who} is blocked on it: then it's "waiting".
+- A cc or a mention can go either way: decide from the context whether whoever tagged {who} wants
+  something from them (a review, an answer, a decision) or only keeps them in the loop. Read the whole
+  thread for it, the parent too: the ask is often there while {who}'s tag is only in a reply. "Not
+  urgent" sets the priority and the do-date, not whether it's a task.
 - Don't add what's on the list already, or what's closed above; update an open task instead, and only
   when something changed. A dropped task means it isn't {who}'s to do, and neither is anything later about the
   same thing (a new email or message on the same report, PR or issue). Leave out updates
